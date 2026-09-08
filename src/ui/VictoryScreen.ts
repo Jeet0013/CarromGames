@@ -46,7 +46,7 @@ export class VictoryScreen {
     this.#subtitle = document.createElement('p');
     this.#subtitle.style.cssText = [
       'margin:0',
-      'font:400 13px/1.5 system-ui, -apple-system, sans-serif',
+      'font:400 14px/1.5 system-ui, -apple-system, sans-serif',
       'color:#9a8d7d',
       'text-align:center',
       'max-width:34ch',
@@ -79,14 +79,14 @@ export class VictoryScreen {
     button.type = 'button';
     button.textContent = label;
     button.style.cssText = [
-      'padding:11px 24px',
+      'padding:15px 26px',
       'border-radius:999px',
       primary ? 'border:1px solid rgba(176,122,69,0.55)' : 'border:1px solid rgba(176,122,69,0.32)',
       primary
         ? 'background:linear-gradient(170deg, #e8a33d, #b07a45)'
         : 'background:transparent',
       primary ? 'color:#1a140e' : 'color:#c9bdae',
-      'font:700 12.5px/1 system-ui, -apple-system, sans-serif',
+      'font:700 13.5px/1 system-ui, -apple-system, sans-serif',
       'letter-spacing:0.08em',
       'text-transform:uppercase',
       'cursor:pointer',

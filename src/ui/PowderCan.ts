@@ -19,9 +19,9 @@ export class PowderCan {
       'position:absolute',
       'top:max(14px, env(safe-area-inset-top))',
       // Third in the corner stack, left of help and sound.
-      'right:calc(max(14px, env(safe-area-inset-right)) + 96px)',
-      'width:40px',
-      'height:40px',
+      'right:calc(max(14px, env(safe-area-inset-right)) + 108px)',
+      'width:46px',
+      'height:46px',
       'border-radius:50%',
       'border:1px solid rgba(176,122,69,0.45)',
       'background:rgba(18,16,14,0.8)',
@@ -47,7 +47,7 @@ export class PowderCan {
 
     // Simple can glyph, drawn rather than an emoji so it matches the UI's tone.
     const icon = document.createElement('span');
-    icon.innerHTML = `<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+    icon.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
       <rect x="7" y="8" width="10" height="12" rx="2" fill="none" stroke="#f4ece1" stroke-width="1.6"/>
       <path d="M9.5 8V6.5a2.5 2.5 0 0 1 5 0V8" fill="none" stroke="#f4ece1" stroke-width="1.6"/>
       <circle cx="10" cy="4" r="1" fill="#fff6e6"/>

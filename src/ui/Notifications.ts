@@ -55,12 +55,12 @@ export class Notifications {
   #chipStyle(tone: NotificationTone): string {
     const style = TONE_STYLES[tone];
     return [
-      'padding:8px 16px',
+      'padding:10px 18px',
       'border-radius:999px',
       `border:1px solid ${style.border}`,
       'background:rgba(18,16,14,0.86)',
       `color:${style.text}`,
-      'font:600 13px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+      'font:600 13.5px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
       'letter-spacing:0.08em',
       'text-transform:uppercase',
       'white-space:nowrap',

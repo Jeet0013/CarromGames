@@ -41,8 +41,17 @@ export class AimSystem {
       new THREE.Vector3(0, 0, 0),
       new THREE.Vector3(0, 0, -1),
     ]);
+    /*
+     * Red, not cream.
+     *
+     * The aim line sits on pale polished wood, and a warm off-white had almost
+     * no contrast against it — legible on a desktop monitor indoors, close to
+     * invisible on a phone screen in daylight, which is exactly when a player
+     * needs it. Red is the one hue on this board that nothing else uses at
+     * strength except the Queen, and she is a single small disc at the centre.
+     */
     const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0xffe6b8,
+      color: 0xff3b30,
       transparent: true,
       opacity: 0.85,
       // Drawn over the board rather than into it — an aim guide that
@@ -53,11 +62,11 @@ export class AimSystem {
     this.#line.renderOrder = 900;
 
     // ── Direction arrow at the far end of the line ────────────────────────
-    const arrowGeometry = new THREE.ConeGeometry(0.09, 0.26, 16);
+    const arrowGeometry = new THREE.ConeGeometry(0.13, 0.34, 16);
     // Cones point +Y; rotate so it points down −Z, the line's direction.
     arrowGeometry.rotateX(-Math.PI / 2);
     const arrowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffd27f,
+      color: 0xff5146,
       transparent: true,
       opacity: 0.95,
       depthTest: false,

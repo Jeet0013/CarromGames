@@ -51,8 +51,8 @@ export class PlayerPanel {
     this.#avatar = document.createElement('div');
     this.#avatar.textContent = data.initials;
     this.#avatar.style.cssText = [
-      'width:34px',
-      'height:34px',
+      'width:36px',
+      'height:36px',
       'border-radius:50%',
       'display:grid',
       'place-items:center',
@@ -71,18 +71,18 @@ export class PlayerPanel {
     const name = document.createElement('div');
     name.textContent = data.name;
     name.style.cssText = [
-      'font:600 12px/1.2 system-ui, -apple-system, sans-serif',
+      'font:600 13px/1.2 system-ui, -apple-system, sans-serif',
       'color:#f4ece1',
       'letter-spacing:0.04em',
       'white-space:nowrap',
       'overflow:hidden',
       'text-overflow:ellipsis',
-      'max-width:98px',
+      'max-width:112px',
     ].join(';');
 
     this.#coins = document.createElement('div');
     this.#coins.style.cssText = [
-      'font:500 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'font:500 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace',
       'color:#9a8d7d',
       'letter-spacing:0.06em',
       'font-variant-numeric:tabular-nums',
@@ -94,7 +94,7 @@ export class PlayerPanel {
     this.#score = document.createElement('div');
     this.#score.style.cssText = [
       'margin-left:auto',
-      'font:700 17px/1 system-ui, -apple-system, sans-serif',
+      'font:700 18px/1 system-ui, -apple-system, sans-serif',
       'color:#f7e7cf',
       'font-variant-numeric:tabular-nums',
       'flex:0 0 auto',
@@ -135,7 +135,7 @@ export class PlayerPanel {
       'backdrop-filter:blur(8px)',
       'pointer-events:none',
       'z-index:25',
-      'min-width:150px',
+      'min-width:164px',
       'transition:border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease',
     ];
 

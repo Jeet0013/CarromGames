@@ -109,7 +109,7 @@ export class MainMenu {
     sub.textContent = 'Choose a game';
     sub.style.cssText = [
       'margin:0',
-      'font:500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'font:500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace',
       'letter-spacing:0.22em',
       'text-transform:uppercase',
       'color:#9a8d7d',
@@ -146,7 +146,7 @@ export class MainMenu {
       'flex-direction:column',
       'align-items:flex-start',
       'gap:5px',
-      'padding:15px 16px',
+      'padding:17px 16px',
       'border-radius:14px',
       'border:1px solid rgba(176,122,69,0.3)',
       'background:linear-gradient(165deg, rgba(34,28,22,0.95), rgba(19,16,13,0.95))',
@@ -177,7 +177,7 @@ export class MainMenu {
     const tag = document.createElement('span');
     tag.textContent = locked ? `${option.tag} · ${option.lockedReason}` : option.tag;
     tag.style.cssText = [
-      'font:600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
       'letter-spacing:0.16em',
       'text-transform:uppercase',
       `color:${locked ? '#9a8d7d' : option.accent}`,
@@ -186,12 +186,12 @@ export class MainMenu {
     const title = document.createElement('span');
     title.textContent = option.title;
     title.style.cssText =
-      'font:600 17px/1.2 system-ui, -apple-system, sans-serif;letter-spacing:0.01em';
+      'font:600 18px/1.2 system-ui, -apple-system, sans-serif;letter-spacing:0.01em';
 
     const blurb = document.createElement('span');
     blurb.textContent = option.blurb;
     blurb.style.cssText =
-      'font:400 12px/1.45 system-ui, -apple-system, sans-serif;color:#9a8d7d';
+      'font:400 13px/1.45 system-ui, -apple-system, sans-serif;color:#9a8d7d';
 
     card.append(rail, tag, title, blurb);
 

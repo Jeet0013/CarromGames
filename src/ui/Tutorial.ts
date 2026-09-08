@@ -128,7 +128,7 @@ export class Tutorial {
     const rulesTitle = document.createElement('span');
     rulesTitle.textContent = 'How to win';
     rulesTitle.style.cssText = [
-      'font:600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
       'letter-spacing:0.18em',
       'text-transform:uppercase',
       'color:#e8a33d',
@@ -141,7 +141,7 @@ export class Tutorial {
       'display:flex',
       'flex-direction:column',
       'gap:5px',
-      'font:400 12.5px/1.5 system-ui, -apple-system, sans-serif',
+      'font:400 13.5px/1.5 system-ui, -apple-system, sans-serif',
       'color:#c9bdae',
     ].join(';');
 
@@ -163,12 +163,12 @@ export class Tutorial {
     done.type = 'button';
     done.textContent = 'Got it';
     done.style.cssText = [
-      'padding:11px 30px',
+      'padding:15px 34px',
       'border-radius:999px',
       'border:1px solid rgba(176,122,69,0.55)',
       'background:linear-gradient(170deg, #e8a33d, #b07a45)',
       'color:#1a140e',
-      'font:700 13px/1 system-ui, -apple-system, sans-serif',
+      'font:700 14px/1 system-ui, -apple-system, sans-serif',
       'letter-spacing:0.09em',
       'text-transform:uppercase',
       'cursor:pointer',
@@ -226,7 +226,7 @@ export class Tutorial {
     const index = document.createElement('span');
     index.textContent = `Step ${number}`;
     index.style.cssText = [
-      'font:600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
       'letter-spacing:0.18em',
       'text-transform:uppercase',
       'color:#e8a33d',
@@ -235,12 +235,12 @@ export class Tutorial {
     const title = document.createElement('span');
     title.textContent = step.title;
     title.style.cssText =
-      'font:600 15px/1.25 system-ui, -apple-system, sans-serif;color:#f4ece1';
+      'font:600 16px/1.25 system-ui, -apple-system, sans-serif;color:#f4ece1';
 
     const body = document.createElement('span');
     body.textContent = step.body;
     body.style.cssText =
-      'font:400 12.5px/1.5 system-ui, -apple-system, sans-serif;color:#9a8d7d;max-width:30ch';
+      'font:400 13.5px/1.5 system-ui, -apple-system, sans-serif;color:#9a8d7d;max-width:30ch';
 
     card.append(art, index, title, body);
     return card;

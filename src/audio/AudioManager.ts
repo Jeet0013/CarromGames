@@ -27,6 +27,36 @@ import { PHYSICS_CONFIG } from '../physics/PhysicsConfig';
  * of them turns a satisfying clack into a buzz, and stacking that many gain
  * nodes clips the master output.
  */
+/**
+ * A fraction of a second of silence as a WAV data URI.
+ *
+ * Built by hand rather than shipped as a file: 44-byte RIFF header plus a
+ * handful of zero samples, which keeps the no-binary-assets rule intact.
+ */
+const SILENT_WAV = (() => {
+  const samples = 1000;
+  const bytes = new Uint8Array(44 + samples * 2);
+  const view = new DataView(bytes.buffer);
+  const ascii = (offset: number, text: string): void => {
+    for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
+  };
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + samples * 2, true);
+  ascii(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, 22050, true);
+  view.setUint32(28, 22050 * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, 'data');
+  view.setUint32(40, samples * 2, true);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `data:audio/wav;base64,${btoa(binary)}`;
+})();
+
 const MIN_GAP_MS = 28;
 const MAX_CONCURRENT = 6;
 
@@ -55,7 +85,8 @@ export class AudioManager {
    * the clock says so.
    */
   readonly #voiceEnds: number[] = [];
-  #unlocked = false;
+  /** Silent loop that keeps iOS in a media session. See `#primeSilentTrack`. */
+  #silentTrack: HTMLAudioElement | undefined;
 
   readonly #settings: AudioSettings = {
     sfxEnabled: true,
@@ -71,13 +102,29 @@ export class AudioManager {
 
     events.on('pocket:scored', () => this.playPocket());
 
-    // Browsers refuse to start audio without a user gesture. Rather than
-    // failing silently on the first shot, the context is created on the first
-    // interaction of any kind and the listeners then removed.
+    /*
+     * Browsers refuse to start audio without a user gesture.
+     *
+     * Listeners are NOT `once`, and are attached in the capture phase. Several
+     * UI controls call `stopPropagation` so a tap does not also aim a shot, and
+     * a bubbling listener on `window` would never see those taps — on a phone,
+     * where the first interaction is very often a menu card, that alone can
+     * leave the game silent for the whole session. Capture runs before the
+     * target, so nothing can suppress it.
+     *
+     * They stay attached because iOS can suspend the context again later
+     * (after a call, a background, a route change); `#unlock` is cheap and
+     * idempotent, and re-running it is what recovers the audio.
+     */
     const unlock = (): void => this.#unlock();
-    window.addEventListener('pointerdown', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
-    window.addEventListener('touchstart', unlock, { once: true });
+    for (const type of ['pointerdown', 'touchstart', 'touchend', 'click', 'keydown']) {
+      window.addEventListener(type, unlock, { capture: true, passive: true });
+    }
+
+    // Returning from the background leaves the context suspended on iOS.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void this.#context?.resume();
+    });
   }
 
   get settings(): Readonly<AudioSettings> {
@@ -97,11 +144,20 @@ export class AudioManager {
     if (this.#master) this.#master.gain.value = this.#settings.masterVolume;
   }
 
-  /** Create the context. Safe to call repeatedly. */
+  /**
+   * Create or revive the audio context. Safe to call on every gesture.
+   *
+   * Not guarded by a one-shot flag any more: iOS suspends the context on its
+   * own, and the only legal moment to resume it is inside a user gesture — so
+   * every gesture gets a chance to put it back.
+   */
   #unlock(): void {
-    if (this.#unlocked) return;
-    this.#unlocked = true;
-
+    if (this.#context) {
+      // Already built; it may simply have been suspended out from under us.
+      if (this.#context.state === 'suspended') void this.#context.resume();
+      this.#primeSilentTrack();
+      return;
+    }
     try {
       const Ctor =
         window.AudioContext ??
@@ -118,9 +174,40 @@ export class AudioManager {
       this.#master = master;
       // Safari can hand back a suspended context even after a gesture.
       void context.resume();
+      this.#primeSilentTrack();
     } catch (error) {
       // Audio is a nicety; never let its absence break the game.
       console.warn('[AudioManager] audio unavailable:', error);
+    }
+  }
+
+  /**
+   * Keep a silent looping track playing.
+   *
+   * On iOS the hardware ring/silent switch mutes Web Audio, which is the single
+   * most common reason a game is silent on an iPhone while working everywhere
+   * else. An `<audio>` element in playback puts the page in a media session,
+   * which in most iOS versions lifts Web Audio out of the muted category.
+   *
+   * It is a workaround, not a guarantee — some iOS versions still honour the
+   * switch — but it costs nothing and fixes the majority case. The buffer is a
+   * generated silent WAV, so no asset ships.
+   */
+  #primeSilentTrack(): void {
+    if (this.#silentTrack) {
+      if (this.#silentTrack.paused) void this.#silentTrack.play().catch(() => {});
+      return;
+    }
+    try {
+      const audio = new Audio(SILENT_WAV);
+      audio.loop = true;
+      audio.volume = 0.001;
+      // Marks this as media rather than an incidental sound effect.
+      audio.setAttribute('playsinline', '');
+      void audio.play().catch(() => {});
+      this.#silentTrack = audio;
+    } catch {
+      // Non-fatal: the game is simply as loud as iOS allows.
     }
   }
 
@@ -139,6 +226,10 @@ export class AudioManager {
     if (!this.#settings.sfxEnabled) return null;
     const context = this.#context;
     if (!context || !this.#master) return null;
+
+    // A context that has drifted back to suspended produces silence without
+    // any error; nudging it here is what keeps sound alive across a long match.
+    if (context.state === 'suspended') void context.resume();
 
     const now = performance.now();
     if (now - this.#lastPlayed < MIN_GAP_MS) return null;
@@ -379,7 +470,14 @@ export class AudioManager {
     });
   }
 
+  /** True when audio exists and is actually running. Surfaced in the UI. */
+  get isRunning(): boolean {
+    return this.#context?.state === 'running';
+  }
+
   dispose(): void {
+    this.#silentTrack?.pause();
+    this.#silentTrack = undefined;
     void this.#context?.close();
     this.#context = undefined;
     this.#master = undefined;

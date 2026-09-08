@@ -71,12 +71,12 @@ export class DifficultySelect {
     back.type = 'button';
     back.textContent = '← Back';
     back.style.cssText = [
-      'padding:9px 20px',
+      'padding:14px 24px',
       'border-radius:999px',
       'border:1px solid rgba(176,122,69,0.35)',
       'background:transparent',
       'color:#9a8d7d',
-      'font:600 12px/1 system-ui, -apple-system, sans-serif',
+      'font:600 13px/1 system-ui, -apple-system, sans-serif',
       'letter-spacing:0.06em',
       'cursor:pointer',
       '-webkit-tap-highlight-color:transparent',
@@ -121,7 +121,7 @@ export class DifficultySelect {
       'flex-direction:column',
       'align-items:flex-start',
       'gap:5px',
-      'padding:14px 16px',
+      'padding:16px 16px',
       'border-radius:14px',
       'border:1px solid rgba(176,122,69,0.3)',
       'background:linear-gradient(165deg, rgba(34,28,22,0.95), rgba(19,16,13,0.95))',
@@ -149,7 +149,7 @@ export class DifficultySelect {
     const name = document.createElement('span');
     name.textContent = info.label;
     name.style.cssText =
-      'font:600 17px/1.2 system-ui, -apple-system, sans-serif;letter-spacing:0.01em';
+      'font:600 18px/1.2 system-ui, -apple-system, sans-serif;letter-spacing:0.01em';
 
     const stars = document.createElement('span');
     // Filled versus hollow, not a count — the shape carries the comparison.
@@ -162,7 +162,7 @@ export class DifficultySelect {
     const blurb = document.createElement('span');
     blurb.textContent = info.description;
     blurb.style.cssText =
-      'font:400 12px/1.45 system-ui, -apple-system, sans-serif;color:#9a8d7d';
+      'font:400 13px/1.45 system-ui, -apple-system, sans-serif;color:#9a8d7d';
 
     card.append(rail, row, blurb);
 
