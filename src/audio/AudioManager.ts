@@ -88,6 +88,15 @@ export class AudioManager {
   /** Silent loop that keeps iOS in a media session. See `#primeSilentTrack`. */
   #silentTrack: HTMLAudioElement | undefined;
 
+  /** Menu theme: rendered once into a buffer, then looped. */
+  #menuBuffer: AudioBuffer | undefined;
+  #menuSource: AudioBufferSourceNode | undefined;
+  #menuGain: GainNode | undefined;
+  #menuWanted = false;
+
+  /** Crowd noise for the cheer, built once. */
+  #crowdBuffer: AudioBuffer | undefined;
+
   readonly #settings: AudioSettings = {
     sfxEnabled: true,
     musicEnabled: true,
@@ -133,10 +142,16 @@ export class AudioManager {
 
   setSfxEnabled(enabled: boolean): void {
     this.#settings.sfxEnabled = enabled;
+    // The one mute control covers music too; a player silencing a game expects
+    // silence, not a theme still playing underneath.
+    if (!enabled) this.stopMenuMusic();
+    else if (this.#menuWanted) this.startMenuMusic();
   }
 
   setMusicEnabled(enabled: boolean): void {
     this.#settings.musicEnabled = enabled;
+    if (!enabled) this.stopMenuMusic();
+    else if (this.#menuWanted) this.startMenuMusic();
   }
 
   setMasterVolume(volume: number): void {
@@ -156,6 +171,7 @@ export class AudioManager {
       // Already built; it may simply have been suspended out from under us.
       if (this.#context.state === 'suspended') void this.#context.resume();
       this.#primeSilentTrack();
+      if (this.#menuWanted && !this.#menuSource) this.startMenuMusic();
       return;
     }
     try {
@@ -175,6 +191,8 @@ export class AudioManager {
       // Safari can hand back a suspended context even after a gesture.
       void context.resume();
       this.#primeSilentTrack();
+      // The menu is usually already showing by the time audio unlocks.
+      if (this.#menuWanted) this.startMenuMusic();
     } catch (error) {
       // Audio is a nicety; never let its absence break the game.
       console.warn('[AudioManager] audio unavailable:', error);
@@ -256,6 +274,124 @@ export class AudioManager {
   /** Record when a voice is scheduled to stop. */
   #trackVoice(endsAt: number): void {
     this.#voiceEnds.push(endsAt);
+  }
+
+  // ── Menu theme ──────────────────────────────────────────────────────────
+
+  /**
+   * Render the menu loop into a buffer.
+   *
+   * Rendered once rather than scheduled note by note. A live scheduler would
+   * need a lookahead timer running for as long as the menu is open, and would
+   * drift if the tab is throttled; a buffer loops in the audio thread and costs
+   * nothing to keep playing.
+   *
+   * The line is built on a five-note scale rather than a major key — Carrom is
+   * an Indian game, and a pentatonic figure over a drone is both the honest
+   * reference and, practically, the shape that survives looping without
+   * becoming tiresome. A major-key hook would wear out in three passes.
+   */
+  #buildMenuLoop(context: AudioContext): AudioBuffer {
+    const rate = context.sampleRate;
+    const seconds = 16;
+    const length = Math.floor(rate * seconds);
+    const buffer = context.createBuffer(2, length, rate);
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+
+    const root = 146.83; // D3
+    // Scale degrees of a warm pentatonic, as frequency ratios from the root.
+    const scale = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2, 9 / 4, 5 / 2];
+
+    // Drone: root and fifth, very slow shimmer so it breathes.
+    for (let i = 0; i < length; i += 1) {
+      const time = i / rate;
+      const shimmer = 0.5 + 0.5 * Math.sin(2 * Math.PI * 0.05 * time);
+      const drone =
+        Math.sin(2 * Math.PI * root * 0.5 * time) * 0.055 +
+        Math.sin(2 * Math.PI * root * 0.75 * time) * 0.035;
+      const value = drone * (0.6 + 0.4 * shimmer);
+      left[i] = value;
+      right[i] = value;
+    }
+
+    // Plucked figure over the top. Each note is a decaying sine stack, which
+    // is a cheap and convincing santoor-like pluck.
+    const pattern = [0, 2, 4, 3, 5, 4, 2, 1, 0, 3, 5, 6, 5, 3, 2, 0];
+    const noteSeconds = seconds / pattern.length;
+
+    pattern.forEach((degree, index) => {
+      const frequency = root * (scale[degree] ?? 1);
+      const start = Math.floor(index * noteSeconds * rate);
+      const duration = Math.floor(noteSeconds * 2.4 * rate);
+      // Alternate the stereo placement so the figure has width.
+      const pan = index % 2 === 0 ? 0.62 : 0.38;
+
+      for (let i = 0; i < duration && start + i < length; i += 1) {
+        const time = i / rate;
+        // Plucks decay fast; the harmonic decays faster still, which is what
+        // makes the attack read as struck rather than blown.
+        const envelope = Math.exp(-time * 2.6);
+        const sample =
+          (Math.sin(2 * Math.PI * frequency * time) +
+            Math.sin(2 * Math.PI * frequency * 2 * time) * 0.32 * Math.exp(-time * 5)) *
+          envelope *
+          0.09;
+        left[start + i] = (left[start + i] ?? 0) + sample * pan;
+        right[start + i] = (right[start + i] ?? 0) + sample * (1 - pan);
+      }
+    });
+
+    return buffer;
+  }
+
+  /** Start the menu theme. Idempotent. */
+  startMenuMusic(): void {
+    this.#menuWanted = true;
+    const context = this.#context;
+    if (!context || !this.#master) return;
+    if (!this.#settings.musicEnabled || !this.#settings.sfxEnabled) return;
+    if (this.#menuSource) return;
+
+    this.#menuBuffer ??= this.#buildMenuLoop(context);
+
+    const gain = context.createGain();
+    // Fade in: music that arrives at full level reads as a jingle, not a theme.
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.5, context.currentTime + 1.2);
+    gain.connect(this.#master);
+
+    const source = context.createBufferSource();
+    source.buffer = this.#menuBuffer;
+    source.loop = true;
+    source.connect(gain);
+    source.start();
+
+    this.#menuSource = source;
+    this.#menuGain = gain;
+  }
+
+  /**
+   * Fade the theme out and stop it.
+   *
+   * Faded rather than cut: the music stops because a match is starting, and a
+   * hard stop at that moment sounds like a fault rather than a transition.
+   */
+  stopMenuMusic(): void {
+    this.#menuWanted = false;
+    const context = this.#context;
+    const source = this.#menuSource;
+    const gain = this.#menuGain;
+    if (!context || !source || !gain) return;
+
+    const now = context.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+    source.stop(now + 0.75);
+
+    this.#menuSource = undefined;
+    this.#menuGain = undefined;
   }
 
   /**
@@ -428,13 +564,41 @@ export class AudioManager {
   }
 
   /**
-   * A short rising chime after a pocket.
+   * Crowd noise for the cheer, built once.
    *
-   * Recorded crowd noise would be wrong here — this is a tabletop game, not a
-   * stadium, and a canned cheer on every coin becomes grating within a minute.
-   * A three-note major arpeggio reads as *reward* rather than applause: it is
-   * brief, it rises, and because it is harmonically consonant it sits under the
-   * wooden clacks instead of fighting them.
+   * A crowd is not a sound effect, it is hundreds of uncorrelated voices, and
+   * that is exactly what filtered noise with a slow random envelope sounds
+   * like. Two independent channels keep it wide — mono noise collapses to a
+   * hiss in the middle of the image and stops reading as people.
+   */
+  #buildCrowd(context: AudioContext): AudioBuffer {
+    const rate = context.sampleRate;
+    const length = Math.floor(rate * 1.6);
+    const buffer = context.createBuffer(2, length, rate);
+
+    for (let channel = 0; channel < 2; channel += 1) {
+      const data = buffer.getChannelData(channel);
+      let flutter = 0;
+      for (let i = 0; i < length; i += 1) {
+        // A slow random walk over the noise gives the uneven swell of voices
+        // rather than a flat wash.
+        flutter += (Math.random() - 0.5) * 0.04;
+        flutter = Math.max(-1, Math.min(1, flutter * 0.995));
+        data[i] = (Math.random() * 2 - 1) * (0.55 + flutter * 0.45);
+      }
+    }
+    return buffer;
+  }
+
+  /**
+   * A cheer when a coin drops.
+   *
+   * Two layers, because either alone is wrong. A bare chime is clean but
+   * bloodless — it tells you that you scored without making you feel it. A bare
+   * crowd is a stadium, which a tabletop game is not. Together, the chime
+   * carries the information and the crowd carries the reward, and the crowd is
+   * mixed low and band-limited so it never buries the wooden clacks that are
+   * still settling.
    */
   playCheer(): void {
     if (!this.#settings.sfxEnabled) return;
@@ -448,6 +612,31 @@ export class AudioManager {
     // Root, major third, fifth — a plain major triad, arpeggiated upward.
     const notes = [523.25, 659.25, 783.99];
 
+    // ── Crowd swell ───────────────────────────────────────────────────────
+    this.#crowdBuffer ??= this.#buildCrowd(context);
+    const crowd = context.createBufferSource();
+    crowd.buffer = this.#crowdBuffer;
+
+    // Band-limited to the range voices actually occupy: below this it muddies
+    // the board resonance, above it hisses.
+    const bandpass = context.createBiquadFilter();
+    bandpass.type = 'bandpass';
+    bandpass.frequency.value = 1150;
+    bandpass.Q.value = 0.75;
+
+    const crowdGain = context.createGain();
+    // Swells rather than starts: a crowd takes a moment to react.
+    crowdGain.gain.setValueAtTime(0.0001, now);
+    crowdGain.gain.exponentialRampToValueAtTime(0.16, now + 0.16);
+    crowdGain.gain.setValueAtTime(0.16, now + 0.5);
+    crowdGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.35);
+
+    crowd.connect(bandpass).connect(crowdGain).connect(master);
+    crowd.start(now);
+    crowd.stop(now + 1.4);
+    this.#trackVoice(now + 1.4);
+
+    // ── Chime ─────────────────────────────────────────────────────────────
     notes.forEach((frequency, index) => {
       const start = now + 0.16 + index * 0.075;
       const duration = 0.3;
@@ -476,6 +665,7 @@ export class AudioManager {
   }
 
   dispose(): void {
+    this.stopMenuMusic();
     this.#silentTrack?.pause();
     this.#silentTrack = undefined;
     void this.#context?.close();

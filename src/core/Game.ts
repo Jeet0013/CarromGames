@@ -446,6 +446,9 @@ export class Game {
       if (status === 'connected') {
         this.#lobby.hide();
         this.#setChromeVisible(true);
+        this.#audio.stopMenuMusic();
+    // The theme belongs to the menus; play is quiet apart from the board.
+    this.#audio.stopMenuMusic();
         this.setMode(GameMode.Online);
         this.#ai.configure(null, AIDifficulty.Normal);
         this.#applyLocalSeatView();
@@ -513,6 +516,9 @@ export class Game {
   #startVsComputer(difficulty: AIDifficulty): void {
     this.#difficultySelect.hide();
     this.#setChromeVisible(true);
+    this.#audio.stopMenuMusic();
+    // The theme belongs to the menus; play is quiet apart from the board.
+    this.#audio.stopMenuMusic();
     this.setMode(GameMode.QuickMatch);
     // The AI takes the top seat; the human keeps the bottom one.
     this.#ai.configure(PlayerSlot.Two, difficulty);
@@ -527,6 +533,8 @@ export class Game {
     this.#notifications.setBanner(null);
     this.#setChromeVisible(false);
     this.#menu.show();
+    // Plays whenever a menu is up, including on the way back from a match.
+    this.#audio.startMenuMusic();
   }
 
   /** Chosen from the menu: configure the mode, then hand over the board. */
@@ -540,6 +548,8 @@ export class Game {
       return;
     }
     this.#setChromeVisible(true);
+    // The theme belongs to the menus; play is quiet apart from the board.
+    this.#audio.stopMenuMusic();
     // Leaving an online game must actually drop the connection, or the peer
     // keeps sending shots into a match that no longer exists.
     if (this.#net.isOnline) {
