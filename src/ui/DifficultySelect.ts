@@ -24,14 +24,24 @@ export class DifficultySelect {
       'inset:0',
       'display:none',
       'flex-direction:column',
-      'align-items:center',
-      'justify-content:center',
-      'gap:clamp(14px, 2.5vh, 24px)',
-      'padding:max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom))',
       'background:radial-gradient(ellipse at 50% 42%, rgba(28,23,18,0.86), rgba(10,9,8,0.96) 72%)',
       'backdrop-filter:blur(3px)',
       'z-index:62',
+    ].join(';');
+
+    const scroll = document.createElement('div');
+    scroll.style.cssText = [
+      'flex:1 1 auto',
+      'min-height:0',
       'overflow-y:auto',
+      '-webkit-overflow-scrolling:touch',
+      'overscroll-behavior:contain',
+      'display:flex',
+      'flex-direction:column',
+      'align-items:center',
+      'justify-content:center',
+      'gap:clamp(14px, 2.5vh, 24px)',
+      'padding:max(20px, env(safe-area-inset-top)) 20px 96px',
     ].join(';');
 
     const title = document.createElement('h2');
@@ -76,7 +86,24 @@ export class DifficultySelect {
       onBack();
     });
 
-    this.#root.append(title, grid, back);
+    scroll.append(title, grid);
+
+    const footer = document.createElement('div');
+    footer.style.cssText = [
+      'position:absolute',
+      'left:0',
+      'right:0',
+      'bottom:0',
+      'display:flex',
+      'justify-content:center',
+      'padding:14px 18px max(16px, env(safe-area-inset-bottom))',
+      'background:linear-gradient(to top, rgba(10,9,8,0.95) 55%, rgba(10,9,8,0))',
+      'pointer-events:none',
+    ].join(';');
+    back.style.pointerEvents = 'auto';
+    footer.append(back);
+
+    this.#root.append(scroll, footer);
     container.append(this.#root);
   }
 

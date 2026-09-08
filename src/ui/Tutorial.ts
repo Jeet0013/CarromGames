@@ -64,14 +64,32 @@ export class Tutorial {
       'inset:0',
       'display:none',
       'flex-direction:column',
-      'align-items:center',
-      'justify-content:center',
-      'gap:18px',
-      'padding:max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom))',
       'background:rgba(10,9,8,0.9)',
       'backdrop-filter:blur(4px)',
       'z-index:70',
+    ].join(';');
+
+    /*
+     * The content scrolls; the action bar does not.
+     *
+     * On a phone the three steps plus the rules run well past one screen, so a
+     * button placed after them sits below the fold — a player has to discover
+     * they can scroll before they can start. Pinning it means the way forward
+     * is always visible, and the padding below the content lets the last line
+     * clear the bar instead of hiding under it.
+     */
+    const scroll = document.createElement('div');
+    scroll.style.cssText = [
+      'flex:1 1 auto',
+      'min-height:0',
       'overflow-y:auto',
+      '-webkit-overflow-scrolling:touch',
+      'overscroll-behavior:contain',
+      'display:flex',
+      'flex-direction:column',
+      'align-items:center',
+      'gap:18px',
+      'padding:max(18px, env(safe-area-inset-top)) 18px 104px',
     ].join(';');
 
     const heading = document.createElement('h2');
@@ -162,7 +180,25 @@ export class Tutorial {
       this.#onDismiss();
     });
 
-    this.#root.append(heading, steps, rules, done);
+    scroll.append(heading, steps, rules);
+
+    const footer = document.createElement('div');
+    footer.style.cssText = [
+      'position:absolute',
+      'left:0',
+      'right:0',
+      'bottom:0',
+      'display:flex',
+      'justify-content:center',
+      'padding:14px 18px max(16px, env(safe-area-inset-bottom))',
+      // Fades rather than cuts, so content is visibly continuing underneath.
+      'background:linear-gradient(to top, rgba(10,9,8,0.97) 55%, rgba(10,9,8,0))',
+      'pointer-events:none',
+    ].join(';');
+    done.style.pointerEvents = 'auto';
+    footer.append(done);
+
+    this.#root.append(scroll, footer);
     container.append(this.#root);
   }
 

@@ -72,8 +72,8 @@ export class MainMenu {
       'flex-direction:column',
       'align-items:center',
       'justify-content:center',
-      'gap:clamp(16px, 3vh, 30px)',
-      'padding:max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom))',
+      'gap:clamp(12px, 2.4vh, 26px)',
+      'padding:max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom))',
       // The board is behind this; a warm radial wash keeps it faintly visible
       // rather than blanking it out, so the menu reads as sitting on the table.
       'background:radial-gradient(ellipse at 50% 42%, rgba(28,23,18,0.86), rgba(10,9,8,0.96) 72%)',

@@ -45,7 +45,14 @@ export const CAMERA_SETTINGS = {
    * prioritising board size in portrait actually requires. It stops short of
    * dead overhead, because some tilt is what makes the rails look raised.
    */
-  portraitTiltDegrees: 11,
+  /*
+   * Raised from 11°. At 11° the board is almost dead overhead — it fills the
+   * narrow axis well but reads as a flat diagram, with no visible rail height
+   * and no thickness on the coins. A tall screen has vertical room to spare
+   * (the board was using ~39% of it), so the extra tilt buys real depth without
+   * costing the board any width.
+   */
+  portraitTiltDegrees: 24,
   /** Aspect at or above which the full tabletop angle is used. */
   landscapeAspect: 1.3,
   /** Aspect at or below which the portrait angle is used. */
@@ -67,7 +74,13 @@ export const CAMERA_SETTINGS = {
    * Extra headroom in portrait, where the HUD occupies real estate at the top
    * and bottom of the screen rather than beside the board.
    */
-  portraitExtraMargin: 1.06,
+  /*
+   * Reclaimed from 1.06. The extra portrait headroom existed to clear a HUD
+   * stacked above and below the board — but the player panels ended up pinned
+   * to the screen corners, well clear of it. The margin was costing board size
+   * on the device with the least to spare.
+   */
+  portraitExtraMargin: 1.0,
   near: 0.1,
   far: 200,
 } as const;
