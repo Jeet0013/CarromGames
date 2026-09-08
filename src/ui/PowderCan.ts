@@ -17,9 +17,18 @@ export class PowderCan {
     this.#button.setAttribute('aria-label', 'Powder the board');
     this.#button.style.cssText = [
       'position:absolute',
-      'top:max(14px, env(safe-area-inset-top))',
-      // Third in the corner stack, left of help and sound.
-      'right:calc(max(14px, env(safe-area-inset-right)) + 108px)',
+      /*
+       * Bottom-right, not the top stack.
+       *
+       * Three buttons plus the opponent's panel competed for the top row, and
+       * on a narrower phone the can and the score chip ran into each other.
+       * The bottom-right corner is genuinely free: the active player's panel
+       * hugs the bottom-left and the power meter is centred, so nothing else
+       * reaches it. It also sits nearer the thumb, which suits a control used
+       * between shots.
+       */
+      'bottom:max(14px, env(safe-area-inset-bottom))',
+      'right:max(14px, env(safe-area-inset-right))',
       'width:46px',
       'height:46px',
       'border-radius:50%',
