@@ -116,7 +116,9 @@ export class GameHUD {
    * side of it.
    */
   layoutAroundBoard(top: number, bottom: number, viewportHeight: number): void {
-    const GAP = 12;
+    // Room to breathe. At 12px the labels read as stuck to the rails; the
+    // board is a physical object and wants a margin around it.
+    const GAP = 26;
     const PANEL = 56;
     // Never above the corner controls, never under the power meter.
     const above = Math.min(

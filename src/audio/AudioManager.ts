@@ -34,7 +34,9 @@ import { PHYSICS_CONFIG } from '../physics/PhysicsConfig';
  * handful of zero samples, which keeps the no-binary-assets rule intact.
  */
 const SILENT_WAV = (() => {
-  const samples = 1000;
+  // Two seconds rather than a few milliseconds: a very short loop restarts
+  // constantly, and some iOS versions drop the media session between passes.
+  const samples = 44100;
   const bytes = new Uint8Array(44 + samples * 2);
   const view = new DataView(bytes.buffer);
   const ascii = (offset: number, text: string): void => {
@@ -100,7 +102,7 @@ export class AudioManager {
   readonly #settings: AudioSettings = {
     sfxEnabled: true,
     musicEnabled: true,
-    masterVolume: 0.7,
+    masterVolume: 0.85,
   };
 
   constructor(events: EventBus) {
@@ -217,11 +219,25 @@ export class AudioManager {
       return;
     }
     try {
-      const audio = new Audio(SILENT_WAV);
+      const audio = document.createElement('audio');
+      audio.src = SILENT_WAV;
       audio.loop = true;
-      audio.volume = 0.001;
-      // Marks this as media rather than an incidental sound effect.
+      audio.volume = 0.02;
       audio.setAttribute('playsinline', '');
+      audio.setAttribute('webkit-playsinline', '');
+      audio.preload = 'auto';
+      /*
+       * Attached to the document, not held as a detached element.
+       *
+       * A detached `new Audio()` is a legal media element but iOS treats it
+       * inconsistently — it can decline to start, or be collected — and a
+       * silent track that is not actually playing does nothing at all. Since
+       * the whole point is to hold the page in a media session so Web Audio
+       * escapes the ring/silent switch, it has to be genuinely, verifiably
+       * playing. In the DOM it is both.
+       */
+      audio.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none';
+      document.body.append(audio);
       void audio.play().catch(() => {});
       this.#silentTrack = audio;
     } catch {
@@ -458,7 +474,7 @@ export class AudioManager {
     const gain = context.createGain();
     // Fade in: music that arrives at full level reads as a jingle, not a theme.
     gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.95, context.currentTime + 0.9);
+    gain.gain.exponentialRampToValueAtTime(1.35, context.currentTime + 0.9);
     gain.connect(this.#master);
 
     const source = context.createBufferSource();
@@ -581,6 +597,46 @@ export class AudioManager {
     body.stop(now + 0.13);
 
     this.#trackVoice(now + Math.max(longest, 0.13) + 0.02);
+  }
+
+  /**
+   * UI click.
+   *
+   * Deliberately unlike the coin clack: a short, bright tick with almost no
+   * body. A control that sounds like a piece of the game being struck would
+   * make the menu feel like the board, and the two need to stay distinct.
+   *
+   * Bypasses the contact throttle — a tap that makes no sound reads as a tap
+   * that did not register, which is exactly the doubt a click is there to
+   * remove.
+   */
+  playClick(): void {
+    if (!this.#settings.sfxEnabled) return;
+    const context = this.#context;
+    const master = this.#master;
+    if (!context || !master) return;
+    if (context.state === 'suspended') void context.resume();
+
+    const now = context.currentTime;
+
+    const osc = context.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1750, now);
+    osc.frequency.exponentialRampToValueAtTime(950, now + 0.03);
+
+    const shape = context.createBiquadFilter();
+    shape.type = 'bandpass';
+    shape.frequency.value = 1900;
+    shape.Q.value = 1.1;
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.14, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+
+    osc.connect(shape).connect(gain).connect(master);
+    osc.start(now);
+    osc.stop(now + 0.06);
+    this.#trackVoice(now + 0.06);
   }
 
   /** Rail hit: lower and duller — the frame absorbs the high end. */

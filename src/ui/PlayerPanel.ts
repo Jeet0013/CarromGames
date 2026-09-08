@@ -227,8 +227,11 @@ export class PlayerPanel {
       this.#root.style.bottom = `${Math.round(y)}px`;
       this.#root.style.top = 'auto';
     }
-    // A vertical transform would fight the explicit offset.
-    this.#root.style.transform = 'none';
+    // Centred on the board's own axis rather than hugging the left margin, so
+    // the two panels read as a matched pair above and below it.
+    this.#root.style.left = '50%';
+    this.#root.style.right = 'auto';
+    this.#root.style.transform = 'translateX(-50%)';
   }
 
   setVisible(visible: boolean): void {

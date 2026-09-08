@@ -208,6 +208,22 @@ export class Game {
       },
     );
 
+    /*
+     * One delegated listener rather than a call in every control.
+     *
+     * Capture phase, because several buttons call `stopPropagation` so a tap
+     * does not also aim a shot — a bubbling listener would miss exactly the
+     * controls a player presses most.
+     */
+    container.addEventListener(
+      'pointerdown',
+      (event) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest('button')) this.#audio.playClick();
+      },
+      { capture: true },
+    );
+
     this.#hud = new GameHUD(container, this.events);
     this.#notifications = new Notifications(container);
     this.events.on('ui:notify', ({ message, tone }) =>
