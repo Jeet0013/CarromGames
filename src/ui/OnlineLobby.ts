@@ -28,7 +28,8 @@ export class OnlineLobby {
       'display:none',
       'flex-direction:column',
       'align-items:center',
-      'justify-content:center',
+      'justify-content:flex-start',
+      'overflow-y:auto',
       'gap:16px',
       'padding:max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom))',
       'background:radial-gradient(ellipse at 50% 42%, rgba(28,23,18,0.9), rgba(10,9,8,0.97) 72%)',
@@ -109,7 +110,7 @@ export class OnlineLobby {
     cancel.type = 'button';
     cancel.textContent = '← Back';
     cancel.style.cssText = [
-      'padding:14px 24px',
+      'padding:16px 26px',
       'border-radius:999px',
       'border:1px solid rgba(176,122,69,0.35)',
       'background:transparent',

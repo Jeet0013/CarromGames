@@ -29,35 +29,35 @@ export const MENU_OPTIONS: readonly MenuOption[] = [
   {
     mode: GameMode.QuickMatch,
     title: 'Play vs Computer',
-    blurb: 'One player against the machine. Four difficulty levels.',
+    blurb: 'Four difficulty levels.',
     tag: '1 Player',
     accent: '#4fb3c4',
   },
   {
     mode: GameMode.LocalMultiplayer,
     title: 'Two Player',
-    blurb: 'Two players share one device, taking turns from opposite sides.',
+    blurb: 'Two players, one device.',
     tag: '2 Players',
     accent: '#e8a33d',
   },
   {
     mode: GameMode.FourPlayer,
     title: 'Four Player',
-    blurb: 'Partners across the board — you and the player opposite you.',
+    blurb: 'Partners with the player opposite you.',
     tag: '4 Players · Teams',
     accent: '#a487e0',
   },
   {
     mode: GameMode.Online,
     title: 'Play with a Friend',
-    blurb: 'Share a link. They open it and you play across two devices.',
+    blurb: 'Share a link, play on two devices.',
     tag: 'Online · 2 Players',
     accent: '#5fa8f5',
   },
   {
     mode: GameMode.Practice,
     title: 'Practice',
-    blurb: 'The board to yourself. No turns, no pressure.',
+    blurb: 'The board to yourself.',
     tag: 'Solo',
     accent: '#6fc08a',
   },
@@ -78,8 +78,8 @@ export class MainMenu {
       'display:none',
       'flex-direction:column',
       'align-items:center',
-      'justify-content:center',
-      'gap:clamp(12px, 2.4vh, 26px)',
+      // Never `center`: see the note above about overflow.
+      'justify-content:flex-start',
       'padding:max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom))',
       // The board is behind this; a warm radial wash keeps it faintly visible
       // rather than blanking it out, so the menu reads as sitting on the table.
@@ -90,7 +90,19 @@ export class MainMenu {
       '-webkit-overflow-scrolling:touch',
     ].join(';');
 
-    this.#root.append(this.#buildHeader(), this.#buildCards());
+    const content = document.createElement('div');
+    content.style.cssText = [
+      'display:flex',
+      'flex-direction:column',
+      'align-items:center',
+      'gap:clamp(10px, 2vh, 22px)',
+      'width:100%',
+      // Centres vertically when it fits, scrolls from the top when it does not.
+      'margin:auto 0',
+    ].join(';');
+    content.append(this.#buildHeader(), this.#buildCards());
+
+    this.#root.append(content);
     container.append(this.#root);
   }
 
@@ -133,7 +145,7 @@ export class MainMenu {
       // Two across when there is room, one when there is not. `auto-fit` with a
       // min track keeps four cards from stretching into dead space.
       'grid-template-columns:repeat(auto-fit, minmax(min(260px, 100%), 1fr))',
-      'gap:12px',
+      'gap:10px',
       'width:min(560px, 100%)',
     ].join(';');
 
@@ -152,8 +164,8 @@ export class MainMenu {
       'display:flex',
       'flex-direction:column',
       'align-items:flex-start',
-      'gap:5px',
-      'padding:17px 16px',
+      'gap:4px',
+      'padding:14px 16px',
       'border-radius:14px',
       'border:1px solid rgba(176,122,69,0.3)',
       'background:linear-gradient(165deg, rgba(34,28,22,0.95), rgba(19,16,13,0.95))',

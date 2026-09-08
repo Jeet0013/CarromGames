@@ -73,6 +73,11 @@ export class PowderCan {
       level > 0.02 ? 'rgba(255,246,230,0.6)' : 'rgba(176,122,69,0.45)';
   }
 
+  /** Hidden while a full-screen overlay is up, so it cannot sit over a menu. */
+  setVisible(visible: boolean): void {
+    this.#button.style.display = visible ? 'grid' : 'none';
+  }
+
   dispose(): void {
     this.#button.remove();
   }

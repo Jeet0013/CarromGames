@@ -55,6 +55,11 @@ export class SoundToggle {
     this.#button.style.opacity = on ? '1' : '0.55';
   }
 
+  /** Hidden while a full-screen overlay is up, so it cannot sit over a menu. */
+  setVisible(visible: boolean): void {
+    this.#button.style.display = visible ? 'grid' : 'none';
+  }
+
   dispose(): void {
     this.#button.removeEventListener('click', this.#onClick);
     this.#button.remove();

@@ -40,6 +40,11 @@ export class HelpButton {
     container.append(this.#button);
   }
 
+  /** Hidden while a full-screen overlay is up, so it cannot sit over a menu. */
+  setVisible(visible: boolean): void {
+    this.#button.style.display = visible ? 'grid' : 'none';
+  }
+
   dispose(): void {
     this.#button.remove();
   }

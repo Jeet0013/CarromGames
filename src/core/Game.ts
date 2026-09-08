@@ -300,6 +300,7 @@ export class Game {
     const vsComputer = this.#lastMode === GameMode.QuickMatch;
     const humanWon = winner === PlayerSlot.One;
 
+    this.#setChromeVisible(false);
     this.#victory.show({
       headline: vsComputer
         ? humanWon
@@ -311,6 +312,19 @@ export class Game {
         : 'All nine of their coins pocketed, with the Queen settled.',
       playerWon: humanWon,
     });
+  }
+
+  /**
+   * Show or hide the in-game corner controls.
+   *
+   * They are pinned above everything so they stay reachable during play, which
+   * meant they also sat on top of the menu and could be tapped through it —
+   * on a small screen they landed directly over the first mode card.
+   */
+  #setChromeVisible(visible: boolean): void {
+    this.#soundToggle.setVisible(visible);
+    this.#helpButton.setVisible(visible);
+    this.#powderCan.setVisible(visible);
   }
 
   get menu(): MainMenu {
@@ -352,6 +366,7 @@ export class Game {
 
   /** Create a room and show the share link. */
   async #hostOnline(): Promise<void> {
+    this.#setChromeVisible(false);
     try {
       this.#lobby.showHosting('Creating room…', '');
       const roomId = await this.#net.host();
@@ -366,6 +381,7 @@ export class Game {
   /** Join a room from a shared link. Called at boot when `?join=` is present. */
   async joinOnline(roomId: string): Promise<void> {
     this.#menu.hide();
+    this.#setChromeVisible(false);
     this.#lobby.showJoining();
     try {
       await this.#net.join(roomId);
@@ -386,6 +402,7 @@ export class Game {
     this.#net.onStatus = (status, detail) => {
       if (status === 'connected') {
         this.#lobby.hide();
+        this.#setChromeVisible(true);
         this.setMode(GameMode.Online);
         this.#ai.configure(null, AIDifficulty.Normal);
         this.#applyLocalSeatView();
@@ -452,6 +469,7 @@ export class Game {
   /** Start a match against the computer at the chosen difficulty. */
   #startVsComputer(difficulty: AIDifficulty): void {
     this.#difficultySelect.hide();
+    this.#setChromeVisible(true);
     this.setMode(GameMode.QuickMatch);
     // The AI takes the top seat; the human keeps the bottom one.
     this.#ai.configure(PlayerSlot.Two, difficulty);
@@ -464,6 +482,7 @@ export class Game {
   showMenu(): void {
     this.#hud.setSeats([]);
     this.#notifications.setBanner(null);
+    this.#setChromeVisible(false);
     this.#menu.show();
   }
 
@@ -477,6 +496,7 @@ export class Game {
       void this.#hostOnline();
       return;
     }
+    this.#setChromeVisible(true);
     // Leaving an online game must actually drop the connection, or the peer
     // keeps sending shots into a match that no longer exists.
     if (this.#net.isOnline) {

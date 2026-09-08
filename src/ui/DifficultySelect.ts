@@ -39,7 +39,7 @@ export class DifficultySelect {
       'display:flex',
       'flex-direction:column',
       'align-items:center',
-      'justify-content:center',
+      'justify-content:flex-start',
       'gap:clamp(14px, 2.5vh, 24px)',
       'padding:max(20px, env(safe-area-inset-top)) 20px 96px',
     ].join(';');
@@ -71,7 +71,7 @@ export class DifficultySelect {
     back.type = 'button';
     back.textContent = '← Back';
     back.style.cssText = [
-      'padding:14px 24px',
+      'padding:16px 26px',
       'border-radius:999px',
       'border:1px solid rgba(176,122,69,0.35)',
       'background:transparent',
@@ -86,7 +86,11 @@ export class DifficultySelect {
       onBack();
     });
 
-    scroll.append(title, grid);
+    const content = document.createElement('div');
+    content.style.cssText =
+      'display:flex;flex-direction:column;align-items:center;gap:clamp(14px, 2.5vh, 24px);width:100%;margin:auto 0';
+    content.append(title, grid);
+    scroll.append(content);
 
     const footer = document.createElement('div');
     footer.style.cssText = [
