@@ -45,8 +45,14 @@ export const BOARD_DIMENSIONS_CM = {
   baseLineSeparation: 3.18,
   /** Distance from the inner frame edge to the outer baseline. */
   baseLineInset: 10.16,
-  /** Red circles capping each end of a baseline. */
-  baseCircleDiameter: 4.45,
+  /**
+   * Red circles capping each end of a baseline.
+   *
+   * 3.18 cm, not the pocket's 4.45 cm. At pocket size the circles from two
+   * adjacent baselines overlap into a figure-8 near each corner, because their
+   * centres are only ~4.2 cm apart.
+   */
+  baseCircleDiameter: 3.18,
   /** Painted line weight. */
   lineWidth: 0.2,
 } as const;

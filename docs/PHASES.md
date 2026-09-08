@@ -16,8 +16,8 @@ giving 14 phases. Content is unchanged — only the grouping.
 | # | Phase | Status | Notes |
 | --- | --- | --- | --- |
 | 1 | Project setup + scene foundation | ✅ Done | Toolchain, skeleton, configs, renderer, camera, lighting, loop |
-| 2 | Carrom board | 🟨 In progress | Surface, rails, pockets, markings, materials |
-| 3 | Physics | ⬜ Not started | Rapier world, `PHYSICS_CONFIG`, rest detection |
+| 2 | Carrom board | ✅ Done | Surface, rails, pockets, markings, materials |
+| 3 | Physics | ⬜ Next | Rapier world, `PHYSICS_CONFIG`, rest detection |
 | 4 | Coins and striker | ⬜ Not started | Meshes + bodies, `PieceFactory` |
 | 5 | Input and shooting | ⬜ Not started | Positioning, aiming, power, release |
 | 6 | Pocket detection | ⬜ Not started | Corner sensors, removal, events |

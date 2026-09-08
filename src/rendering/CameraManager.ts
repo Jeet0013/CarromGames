@@ -20,6 +20,22 @@ export const CAMERA_SETTINGS = {
   fov: 40,
   /** Degrees above the board plane. 90° is straight down; 55° reads as a real tabletop. */
   elevationDegrees: 55,
+  /**
+   * Elevation used on narrow (portrait) viewports.
+   *
+   * At 55° the board projects as a shallow trapezoid — wide but vertically
+   * foreshortened. On a tall phone screen that fits easily across but leaves
+   * two thirds of the height empty, and the board ends up tiny. Raising the
+   * camera toward top-down un-foreshortens it so it fills the tall axis, which
+   * is what "prioritize board size in portrait" actually requires. It is not
+   * taken all the way to 90° because some tilt is what makes the rails read as
+   * having height.
+   */
+  portraitElevationDegrees: 74,
+  /** Aspect at or above which the full tabletop angle is used. */
+  landscapeAspect: 1.3,
+  /** Aspect at or below which the portrait angle is used. */
+  portraitAspect: 0.72,
   /** Rotation around the board. 0 puts the camera on Player One's side (+Z). */
   azimuthDegrees: 0,
   /** Breathing room around the board edge, as a fraction of the fitted distance. */
@@ -28,7 +44,7 @@ export const CAMERA_SETTINGS = {
    * Extra headroom in portrait, where the HUD occupies real estate at the top
    * and bottom of the screen rather than beside the board.
    */
-  portraitExtraMargin: 1.1,
+  portraitExtraMargin: 1.06,
   near: 0.1,
   far: 200,
 } as const;
@@ -44,6 +60,8 @@ export class CameraManager {
   #azimuth = THREE.MathUtils.degToRad(CAMERA_SETTINGS.azimuthDegrees);
   #margin: number = CAMERA_SETTINGS.framingMargin;
   #aspect = 1;
+  /** Set only by the dev tuner; when present it overrides aspect-driven elevation. */
+  #manualElevation: number | undefined;
 
   // Scratch vectors, reused every frame-fit to keep the resize path allocation-free.
   readonly #dir = new THREE.Vector3();
@@ -74,21 +92,59 @@ export class CameraManager {
     this.#aspect = cssWidth / Math.max(1, cssHeight);
     this.#camera.aspect = this.#aspect;
 
-    // Portrait needs the board pulled in further to clear the stacked HUD.
+    // Portrait needs the board pulled in slightly to clear the stacked HUD.
     this.#margin =
       this.#aspect < 1
         ? CAMERA_SETTINGS.framingMargin * CAMERA_SETTINGS.portraitExtraMargin
         : CAMERA_SETTINGS.framingMargin;
 
+    // The dev tuner takes precedence, so live experimentation is not undone by
+    // a resize.
+    if (this.#manualElevation === undefined) {
+      this.#elevation = THREE.MathUtils.degToRad(this.#autoElevation(this.#aspect));
+    }
+
     this.#applyFraming();
+  }
+
+  /**
+   * Elevation for a given aspect ratio.
+   *
+   * Blends smoothly between the tabletop angle in landscape and the more
+   * top-down portrait angle, so a device rotating through the middle does not
+   * snap.
+   */
+  #autoElevation(aspect: number): number {
+    const { landscapeAspect, portraitAspect, elevationDegrees, portraitElevationDegrees } =
+      CAMERA_SETTINGS;
+    const t = THREE.MathUtils.clamp(
+      (aspect - portraitAspect) / (landscapeAspect - portraitAspect),
+      0,
+      1,
+    );
+    // Smoothstep rather than linear: keeps both ends stable and puts the
+    // transition in the middle, where no real device sits for long.
+    const eased = t * t * (3 - 2 * t);
+    return THREE.MathUtils.lerp(portraitElevationDegrees, elevationDegrees, eased);
   }
 
   /** Adjust the viewing angle. Used by the dev camera tuner only. */
   setAngles(elevationDegrees: number, azimuthDegrees: number): void {
-    this.#elevation = THREE.MathUtils.degToRad(
-      THREE.MathUtils.clamp(elevationDegrees, 15, 89),
-    );
+    this.#manualElevation = THREE.MathUtils.clamp(elevationDegrees, 15, 89);
+    this.#elevation = THREE.MathUtils.degToRad(this.#manualElevation);
     this.#azimuth = THREE.MathUtils.degToRad(azimuthDegrees);
+    this.#applyFraming();
+  }
+
+  /** Drop the dev override and return to aspect-driven framing. */
+  resetAngles(): void {
+    this.#manualElevation = undefined;
+    this.#azimuth = THREE.MathUtils.degToRad(CAMERA_SETTINGS.azimuthDegrees);
+    this.#elevation = THREE.MathUtils.degToRad(this.#autoElevation(this.#aspect));
+    this.#margin =
+      this.#aspect < 1
+        ? CAMERA_SETTINGS.framingMargin * CAMERA_SETTINGS.portraitExtraMargin
+        : CAMERA_SETTINGS.framingMargin;
     this.#applyFraming();
   }
 

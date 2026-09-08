@@ -6,8 +6,10 @@
  * in `gameplay/` in a later phase.
  */
 
-import { GAME_CONFIG } from '../config/GameConfig';
+import { CarromBoard } from '../board/CarromBoard';
+import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
+import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
 import { Lighting } from '../rendering/Lighting';
 import { Renderer } from '../rendering/Renderer';
 import { SceneManager } from '../rendering/SceneManager';
@@ -31,8 +33,10 @@ export class Game {
   readonly #camera: CameraManager;
   readonly #lighting: Lighting;
   readonly #loop: GameLoop;
+  readonly #board: CarromBoard;
 
   #resizeObserver: ResizeObserver | undefined;
+  #cameraTuner: DebugCameraTuner | undefined;
   #disposed = false;
 
   constructor({ container, quality = GAME_CONFIG.defaultSettings.quality }: GameOptions) {
@@ -50,6 +54,15 @@ export class Game {
     // Lights are permanent furniture — they must survive a board teardown
     // between matches.
     this.#scene.addPermanent(this.#lighting.group);
+
+    // The board is content, not furniture: a level change tears it down and
+    // rebuilds it, which is why it goes through `add` rather than `addPermanent`.
+    this.#board = new CarromBoard(quality);
+    this.#scene.add(this.#board.group);
+
+    // Constructed inside the DEV guard so the class is tree-shaken out of
+    // production builds entirely, not merely left inert.
+    if (IS_DEV) this.#cameraTuner = new DebugCameraTuner(this.#camera);
 
     this.#loop = new GameLoop({
       fixedUpdate: (delta) => this.#fixedUpdate(delta),
@@ -71,6 +84,10 @@ export class Game {
 
   get renderer(): Renderer {
     return this.#renderer;
+  }
+
+  get board(): CarromBoard {
+    return this.#board;
   }
 
   get loop(): GameLoop {
@@ -156,6 +173,10 @@ export class Game {
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = undefined;
 
+    this.#cameraTuner?.dispose();
+    this.#cameraTuner = undefined;
+
+    this.#board.dispose();
     this.#lighting.dispose();
     this.#scene.dispose();
     this.#renderer.dispose();
