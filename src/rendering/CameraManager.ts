@@ -251,6 +251,21 @@ export class CameraManager {
     this.#applyFraming();
   }
 
+  /**
+   * Rotate the view so a chosen edge sits nearest the viewer.
+   *
+   * Separate from `setAngles` because that pins elevation as a dev override,
+   * which would freeze the portrait/landscape tilt. Azimuth is the only thing
+   * that changes here, so responsive framing keeps working.
+   */
+  setAzimuthDegrees(degrees: number): void {
+    this.#azimuth = THREE.MathUtils.degToRad(degrees);
+    this.#applyFraming();
+    // Snap rather than swing: this is called when a match starts, and a
+    // half-second orbit at that moment reads as a glitch.
+    this.#settled = false;
+  }
+
   /** Drop the dev override and return to aspect-driven framing. */
   resetAngles(): void {
     this.#manualElevation = undefined;

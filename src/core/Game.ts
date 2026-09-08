@@ -325,6 +325,31 @@ export class Game {
     return this.#net;
   }
 
+  /**
+   * Put this device's own player at the near edge.
+   *
+   * The board is shared, so both devices cannot both have Player One at the
+   * bottom in *world* terms — but each player must see their own side nearest
+   * them, or they are shooting away from themselves at a striker on the far
+   * rail. The guest therefore views the board from the opposite azimuth and
+   * gets its panel moved to the bottom. No game state changes: the world is
+   * identical on both machines, only the viewpoint differs.
+   */
+  #applyLocalSeatView(): void {
+    const guest = this.#net.role === 'guest';
+    this.#camera.setAzimuthDegrees(guest ? 180 : 0);
+
+    const seats = SEAT_LAYOUTS[GameMode.Online].map((seat) => ({
+      ...seat,
+      // Whoever is local sits at the bottom of *this* screen.
+      side: seat.slot === this.#net.localSlot ? PlayerSide.Bottom : PlayerSide.Top,
+      name: seat.slot === this.#net.localSlot ? 'You' : 'Opponent',
+      initials: seat.slot === this.#net.localSlot ? 'YO' : 'OP',
+    }));
+    this.#hud.setSeats(seats);
+    this.#hud.bind(this.#turns.match);
+  }
+
   /** Create a room and show the share link. */
   async #hostOnline(): Promise<void> {
     try {
@@ -363,6 +388,7 @@ export class Game {
         this.#lobby.hide();
         this.setMode(GameMode.Online);
         this.#ai.configure(null, AIDifficulty.Normal);
+        this.#applyLocalSeatView();
         this.#turns.start();
         this.events.emit('ui:notify', { message: 'OPPONENT CONNECTED', tone: 'good' });
       }
@@ -377,8 +403,7 @@ export class Game {
     this.#net.onShot = (by, shot) => {
       if (by === this.#net.localSlot) return;
       this.#physics.setPosition('striker', shot.origin.x, shot.origin.z);
-      this.#turns.beginAiming();
-      this.#turns.executeShot(shot);
+      this.#turns.acceptRemoteShot(shot);
     };
 
     // Guest only: adopt the host's positions once its shot has settled.
@@ -392,7 +417,7 @@ export class Game {
           else this.#physics.setPosition(snapshot.id, snapshot.x, snapshot.z);
         }
       }
-      this.#turns.match.currentPlayer = currentPlayer;
+      this.#turns.adoptTurn(currentPlayer);
       this.#hud.bind(this.#turns.match);
     };
 
@@ -404,7 +429,11 @@ export class Game {
     });
 
     // Host publishes the truth after every shot.
-    this.events.on('shot:settled', () => {
+    //
+    // On `shot:resolved`, not `shot:settled`: the latter fires before the rule
+    // engine runs, so the sync carried the pre-shot `currentPlayer`. The guest
+    // adopted it, was pushed back into the host's turn, and could never move.
+    this.events.on('shot:resolved', ({ nextPlayer }) => {
       if (!this.#net.isHost) return;
       const snapshot: PieceSnapshot[] = this.#pieces.pieces.map((piece) => ({
         id: piece.id,
@@ -412,7 +441,7 @@ export class Game {
         z: +piece.position.z.toFixed(4),
         active: piece.active,
       }));
-      this.#net.sendSync(snapshot, this.#turns.match.currentPlayer);
+      this.#net.sendSync(snapshot, nextPlayer);
     });
   }
 
@@ -450,7 +479,10 @@ export class Game {
     }
     // Leaving an online game must actually drop the connection, or the peer
     // keeps sending shots into a match that no longer exists.
-    if (this.#net.isOnline) this.#net.disconnect();
+    if (this.#net.isOnline) {
+      this.#net.disconnect();
+      this.#camera.setAzimuthDegrees(0);
+    }
     // Playing the computer needs a difficulty before a match can begin.
     if (mode === GameMode.QuickMatch) {
       this.#menu.hide();

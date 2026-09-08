@@ -283,6 +283,12 @@ export class TurnManager {
 
     this.#resetStrikerForTurn();
     this.#transition(TurnState.StrikerPositioning);
+
+    // Only now is the board final and the next player known.
+    this.#events.emit('shot:resolved', {
+      by: shooter,
+      nextPlayer: this.#match.currentPlayer,
+    });
   }
 
   /** Emit notifications and keep the standing-obligation banner honest. */
@@ -371,6 +377,36 @@ export class TurnManager {
     const home = strikerHome(this.currentSide);
     this.#physics.setPosition('striker', home.x, home.z);
     void PIECE_GEOMETRY;
+  }
+
+  /**
+   * Replay a shot that arrived from another device.
+   *
+   * Forces the machine into positioning first. A remote shot can land while
+   * this device is in any state — mid-settle, mid-aim — and `beginShot` quite
+   * correctly refuses from there. Without this the shot was simply dropped:
+   * the boards diverged, the turn never advanced, and the other player could
+   * never move again. That is a network concern, not a rule being bent; the
+   * shot itself still goes through `executeShot` like every other.
+   */
+  acceptRemoteShot(shot: ShotCommand): boolean {
+    this.#state = TurnState.StrikerPositioning;
+    if (!this.beginAiming()) return false;
+    return this.executeShot(shot);
+  }
+
+  /**
+   * Adopt the host's view of whose turn it is.
+   *
+   * Both devices resolve the same shot locally, and a difference of one rule
+   * evaluation would leave them disagreeing about who plays next — with each
+   * waiting for the other. The host's answer wins.
+   */
+  adoptTurn(slot: PlayerSlot): void {
+    this.#match.currentPlayer = slot;
+    this.#state = TurnState.StrikerPositioning;
+    this.#resetStrikerForTurn();
+    this.#events.emit('turn:playerSwitched', { to: slot });
   }
 
   /** Hand the turn over explicitly. Follows `seatOrder`, so 2P and 4P both work. */
