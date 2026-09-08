@@ -19,9 +19,9 @@ giving 14 phases. Content is unchanged — only the grouping.
 | 2 | Carrom board | ✅ Done | Surface, rails, pockets, markings, materials |
 | 3 | Physics | ✅ Done | Rapier world, `PHYSICS_CONFIG`, rest detection |
 | 4 | Coins and striker | ✅ Done | Meshes + bodies, `PieceFactory` |
-| 5 | Input and shooting | 🟨 In progress | Positioning, aiming, power, release |
-| 6 | Pocket detection | ⬜ Not started | Corner sensors, removal, events |
-| 7 | Game rules | ⬜ Not started | `RuleEngine`, `TurnManager`, fouls |
+| 5 | Input and shooting | ✅ Done | Positioning, aiming, power, release |
+| 6 | Pocket detection | ✅ Done | Corner sensors, removal, events |
+| 7 | Game rules | ⬜ Next | `RuleEngine`, `TurnManager`, fouls |
 | 8 | Queen logic | ⬜ Not started | Cover, return-to-center, UI signal |
 | 9 | AI | ⬜ Not started | Planner, scorer, difficulty tiers |
 | 10 | UI | ⬜ Not started | All 11 screens, HUD |
@@ -117,3 +117,5 @@ limitations, recommended next phase.
 - Phase 2 — [`reports/phase-02.md`](./reports/phase-02.md)
 - Phase 3 — [`reports/phase-03.md`](./reports/phase-03.md)
 - Phase 4 — [`reports/phase-04.md`](./reports/phase-04.md)
+- Phase 5 — [`reports/phase-05.md`](./reports/phase-05.md)
+- Phase 6 — [`reports/phase-06.md`](./reports/phase-06.md)

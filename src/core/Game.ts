@@ -10,6 +10,9 @@ import { CarromBoard } from '../board/CarromBoard';
 import { PhysicsDebugRenderer } from '../physics/PhysicsDebugRenderer';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { PieceFactory } from '../pieces/PieceFactory';
+import { InputManager } from '../input/InputManager';
+import { TurnManager } from '../gameplay/TurnManager';
+import { PocketManager } from '../gameplay/PocketManager';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
@@ -40,6 +43,9 @@ export class Game {
   readonly #physics: PhysicsWorld;
 
   readonly #pieces: PieceFactory;
+  readonly #turns: TurnManager;
+  readonly #pockets: PocketManager;
+  readonly #input: InputManager;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
 
@@ -75,6 +81,19 @@ export class Game {
     // 9 white + 9 black + Queen + striker, in the standard opening arrangement.
     this.#pieces = new PieceFactory(this.#physics);
     this.#scene.add(this.#pieces.group);
+
+    this.#turns = new TurnManager(this.events, this.#physics);
+    this.#pockets = new PocketManager(this.events, this.#physics, this.#pieces);
+    this.#input = new InputManager({
+      canvas: this.#canvas,
+      camera: this.#camera.camera,
+      physics: this.#physics,
+      pieces: this.#pieces,
+      turns: this.#turns,
+      events: this.events,
+      uiContainer: container,
+    });
+    this.#scene.addPermanent(this.#input.aimSystem.group);
 
     if (IS_DEV) {
       this.#physicsDebug = new PhysicsDebugRenderer(this.#physics);
@@ -120,9 +139,23 @@ export class Game {
     return this.#pieces;
   }
 
+  get turns(): TurnManager {
+    return this.#turns;
+  }
+
+  get pockets(): PocketManager {
+    return this.#pockets;
+  }
+
+  get input(): InputManager {
+    return this.#input;
+  }
+
   /** Return every piece to its opening position. */
   resetBoard(): void {
     this.#pieces.resetBoard();
+    this.#pockets.reset();
+    this.#input.resetStriker();
   }
 
   get loop(): GameLoop {
@@ -131,6 +164,7 @@ export class Game {
 
   start(): void {
     if (this.#disposed) throw new Error('Game has been disposed');
+    this.#turns.start();
     this.#loop.start();
     this.events.emit('game:ready');
   }
@@ -157,6 +191,10 @@ export class Game {
 
   #fixedUpdate(delta: number): void {
     this.#physics.step(delta);
+    // Detection runs before the turn machine: a piece pocketed on this step
+    // must be logged before the same step can declare the shot settled.
+    this.#pockets.update(delta);
+    this.#turns.update();
   }
 
   #render(_alpha: number): void {
@@ -225,6 +263,7 @@ export class Game {
     this.#cameraTuner = undefined;
 
     window.removeEventListener('keydown', this.#onDebugKey);
+    this.#input.dispose();
     this.#pieces.dispose();
     this.#physicsDebug?.dispose();
     this.#physics.dispose();

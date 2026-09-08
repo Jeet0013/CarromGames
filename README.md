@@ -65,10 +65,10 @@ fires them through the same striker and physics as a human — no faked outcomes
 Built in 14 sequential phases; a phase ships only once it runs clean. Current
 progress is tracked in [docs/PHASES.md](docs/PHASES.md).
 
-> **Phase 2 — Carrom board: complete.** The full board renders at 60 FPS on
-> desktop, tablet, and phone: regulation surface and rails, four real cut
-> pockets, procedurally generated wood and markings, clearcoat varnish, and
-> shadows. Phase 3 brings physics.
+> **Phase 6 — Pocket detection: complete.** The game is playable end to end:
+> position the striker on the baseline, pull back to aim, release to shoot.
+> Real Rapier physics, all 20 pieces, four working pockets with a shot event
+> log. Phase 7 brings the rules that decide what a pocket means.
 
 ## Tech
 
