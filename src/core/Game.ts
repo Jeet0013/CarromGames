@@ -20,6 +20,7 @@ import { GameHUD, SEAT_ACCENTS, type SeatConfig } from '../ui/GameHUD';
 import { MainMenu } from '../ui/MainMenu';
 import { Tutorial } from '../ui/Tutorial';
 import { HelpButton } from '../ui/HelpButton';
+import { ExitButton } from '../ui/ExitButton';
 import { SaveManager } from '../storage/SaveManager';
 import { DifficultySelect } from '../ui/DifficultySelect';
 import { AIPlayer } from '../ai/AIPlayer';
@@ -73,6 +74,7 @@ export class Game {
   readonly #menu: MainMenu;
   readonly #tutorial: Tutorial;
   readonly #helpButton: HelpButton;
+  readonly #exitButton: ExitButton;
   readonly #save = new SaveManager();
   readonly #difficultySelect: DifficultySelect;
   readonly #ai: AIPlayer;
@@ -171,6 +173,17 @@ export class Game {
       this.#save.update({ hasSeenTutorial: true });
     });
     this.#helpButton = new HelpButton(container, () => this.#tutorial.show());
+    this.#exitButton = new ExitButton(container, () => {
+      // Leaving must also drop an online session, or the peer keeps sending
+      // shots into a match that no longer exists on this device.
+      if (this.#net.isOnline) {
+        this.#net.disconnect();
+        this.#camera.setAzimuthDegrees(0);
+      }
+      this.#ai.configure(null, AIDifficulty.Normal);
+      this.#victory.hide();
+      this.showMenu();
+    });
     this.#difficultySelect = new DifficultySelect(
       container,
       (difficulty) => this.#startVsComputer(difficulty),
@@ -325,6 +338,7 @@ export class Game {
     this.#soundToggle.setVisible(visible);
     this.#helpButton.setVisible(visible);
     this.#powderCan.setVisible(visible);
+    this.#exitButton.setVisible(visible);
   }
 
   get menu(): MainMenu {
@@ -628,6 +642,7 @@ export class Game {
 
     this.#renderer.resize(width, height);
     this.#camera.resize(width, height);
+    this.#hud.handleResize();
   }
 
   /** Stop simulating while the tab is hidden — no point burning battery. */
@@ -664,6 +679,7 @@ export class Game {
     this.#victory.dispose();
     this.#pocketEffect.dispose();
     this.#difficultySelect.dispose();
+    this.#exitButton.dispose();
     this.#helpButton.dispose();
     this.#tutorial.dispose();
     this.#menu.dispose();

@@ -41,6 +41,7 @@ export class GameHUD {
   readonly #container: HTMLElement;
   readonly #unsubscribes: Array<() => void> = [];
   #seats: readonly SeatConfig[] = [];
+  #narrow = false;
 
   constructor(container: HTMLElement, events: EventBus) {
     this.#container = container;
@@ -61,8 +62,27 @@ export class GameHUD {
     for (const panel of this.#panels.values()) panel.dispose();
     this.#panels.clear();
     this.#seats = seats;
+    this.#narrow = window.innerWidth < 560;
 
-    for (const seat of seats) {
+    /*
+     * Four players on a phone cannot use their own edges.
+     *
+     * In portrait the board fills ~92% of the width, so a panel pinned to the
+     * left or right edge at mid-height lands on the playfield. The bands above
+     * and below the board are free, so all four move there as compact chips —
+     * two on top, two below — with the pairing kept as close to the seating as
+     * the space allows.
+     */
+    const crowded = seats.length > 2 && this.#narrow;
+
+    const CORNERS: Record<number, readonly string[]> = {
+      0: ['top:max(14px, env(safe-area-inset-top))', 'left:68px'],
+      1: ['top:max(14px, env(safe-area-inset-top))', 'left:160px'],
+      2: ['bottom:max(64px, calc(env(safe-area-inset-bottom) + 58px))', 'left:14px'],
+      3: ['bottom:max(64px, calc(env(safe-area-inset-bottom) + 58px))', 'left:112px'],
+    };
+
+    seats.forEach((seat, index) => {
       this.#panels.set(
         seat.slot,
         new PlayerPanel(this.#container, {
@@ -70,9 +90,24 @@ export class GameHUD {
           initials: seat.initials,
           side: seat.side,
           accent: seat.accent,
+          ...(crowded ? { anchor: CORNERS[index] ?? CORNERS[0], compact: true } : {}),
         }),
       );
-    }
+    });
+  }
+
+  /**
+   * Re-lay the panels if the viewport crosses the narrow threshold.
+   *
+   * Rotating a phone with four players changes which layout is viable, and a
+   * stale layout would leave chips on the board.
+   */
+  handleResize(): void {
+    const narrow = window.innerWidth < 560;
+    if (narrow === this.#narrow) return;
+    const seats = this.#seats;
+    this.setSeats(seats);
+    if (this.#syncTarget) this.sync(this.#syncTarget);
   }
 
   get seats(): readonly SeatConfig[] {

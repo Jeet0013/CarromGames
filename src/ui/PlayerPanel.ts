@@ -21,6 +21,23 @@ export interface PlayerPanelData {
   readonly side: PlayerSide;
   /** Accent colour for this seat, as a CSS colour. */
   readonly accent: string;
+  /**
+   * Where to pin the panel, as CSS declarations.
+   *
+   * Supplied by the HUD rather than derived from `side`, because with four
+   * players on a phone the seat's own edge is not available — the board fills
+   * the width, and a mid-height panel would sit on the playfield.
+   */
+  readonly anchor?: readonly string[];
+  /**
+   * Avatar and score only.
+   *
+   * Four full panels do not fit around a phone-sized board. Dropping the name
+   * and colour line keeps the two things that actually matter mid-match —
+   * whose turn it is, and the score — in a chip narrow enough that four of
+   * them clear the board entirely.
+   */
+  readonly compact?: boolean;
 }
 
 const COINS_PER_PLAYER = 9;
@@ -41,11 +58,14 @@ export class PlayerPanel {
    */
   #active: boolean | undefined;
 
+  readonly #compact: boolean;
+
   constructor(container: HTMLElement, data: PlayerPanelData) {
     this.#accent = data.accent;
+    this.#compact = data.compact ?? false;
 
     this.#root = document.createElement('div');
-    this.#root.style.cssText = this.#position(data.side);
+    this.#root.style.cssText = this.#position(data.side, data.anchor, this.#compact);
 
     // ── Avatar ────────────────────────────────────────────────────────────
     this.#avatar = document.createElement('div');
@@ -89,6 +109,8 @@ export class PlayerPanel {
     ].join(';');
 
     text.append(name, this.#coins);
+    // A compact chip carries the avatar, the score and the turn dot only.
+    if (this.#compact) text.style.display = 'none';
 
     // ── Score ─────────────────────────────────────────────────────────────
     this.#score = document.createElement('div');
@@ -121,8 +143,12 @@ export class PlayerPanel {
     this.update({ score: 0, coinsPocketed: 0, color: null, active: false });
   }
 
-  /** Anchor the panel to the edge its player sits at. */
-  #position(side: PlayerSide): string {
+  /** Anchor the panel, either to its own edge or where the HUD decides. */
+  #position(
+    side: PlayerSide,
+    anchor: readonly string[] | undefined,
+    compact: boolean,
+  ): string {
     const base = [
       'position:absolute',
       'display:flex',
@@ -135,14 +161,18 @@ export class PlayerPanel {
       'backdrop-filter:blur(8px)',
       'pointer-events:none',
       'z-index:25',
-      'min-width:164px',
+      compact ? 'min-width:0' : 'min-width:164px',
+      compact ? 'padding:7px 10px' : '',
       'transition:border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease',
-    ];
+    ].filter(Boolean);
+
+    if (anchor) return [...base, ...anchor].join(';');
 
     // The sound toggle owns the top-right corner, so the top panel is offset
     // left of it rather than tucked underneath.
     const anchors: Record<PlayerSide, string[]> = {
-      [PlayerSide.Top]: ['top:max(14px, env(safe-area-inset-top))', 'left:14px'],
+      // Clear of the exit button, which owns the top-left corner.
+      [PlayerSide.Top]: ['top:max(14px, env(safe-area-inset-top))', 'left:68px'],
       [PlayerSide.Bottom]: ['bottom:max(46px, calc(env(safe-area-inset-bottom) + 40px))', 'left:14px'],
       [PlayerSide.Left]: ['top:50%', 'left:14px', 'transform:translateY(-50%)'],
       [PlayerSide.Right]: ['top:50%', 'right:14px', 'transform:translateY(-50%)'],
