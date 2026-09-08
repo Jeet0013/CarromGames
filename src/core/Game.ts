@@ -136,7 +136,7 @@ export class Game {
 
     this.#loop = new GameLoop({
       fixedUpdate: (delta) => this.#fixedUpdate(delta),
-      render: (alpha) => this.#render(alpha),
+      render: (alpha, frameDelta) => this.#render(alpha, frameDelta),
     });
 
     this.#observeSize();
@@ -254,7 +254,10 @@ export class Game {
     this.#turns.update();
   }
 
-  #render(_alpha: number): void {
+  #render(_alpha: number, frameDelta: number): void {
+    // Camera easing runs on the real frame delta, not the fixed step — it is
+    // presentation, and must take the same wall-clock time at any frame rate.
+    this.#camera.update(frameDelta);
     // Positions are copied from the simulation once per frame rather than once
     // per fixed step: several steps can run in one frame, and only the last
     // one is ever seen.

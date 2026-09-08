@@ -13,29 +13,52 @@ import { BOARD_CONFIG } from '../board/BoardConfig';
 
 export const CAMERA_SETTINGS = {
   /**
-   * Narrow-ish field of view. A wide FOV would exaggerate perspective across
-   * the board, making far coins look smaller than near ones and misleading the
-   * player's aim — the one thing a Carrom camera must not do.
-   */
-  fov: 40,
-  /** Degrees above the board plane. 90° is straight down; 55° reads as a real tabletop. */
-  elevationDegrees: 55,
-  /**
-   * Elevation used on narrow (portrait) viewports.
+   * Long lens, deliberately.
    *
-   * At 55° the board projects as a shallow trapezoid — wide but vertically
-   * foreshortened. On a tall phone screen that fits easily across but leaves
-   * two thirds of the height empty, and the board ends up tiny. Raising the
-   * camera toward top-down un-foreshortens it so it fills the tall axis, which
-   * is what "prioritize board size in portrait" actually requires. It is not
-   * taken all the way to 90° because some tilt is what makes the rails read as
-   * having height.
+   * A narrow field of view compresses perspective, which is what gives an
+   * isometric tabletop look while staying a true perspective camera. It also
+   * removes the fisheye stretch a wide FOV produces at the board's corners, and
+   * — more importantly for play — keeps far coins nearly the same on-screen
+   * size as near ones, so the board reads at a consistent scale and aim is not
+   * misleading. The cost is a camera that sits further back, which is free.
    */
-  portraitElevationDegrees: 74,
+  fov: 30,
+
+  /**
+   * Tilt is measured from straight down, matching how a tabletop camera is
+   * normally described: 0° is directly overhead, 90° is at table level.
+   *
+   * 20° gives the shallow, near-overhead angle of a premium board game
+   * presentation — enough that the rails and the coins' thickness read as
+   * three-dimensional, without the foreshortening that a lower camera forces
+   * onto a flat square playfield.
+   */
+  tiltDegrees: 20,
+
+  /**
+   * Portrait sits closer to overhead.
+   *
+   * A tilted camera foreshortens the board into a shallow trapezoid: wide, but
+   * vertically compressed. On a tall phone that fits easily across and leaves
+   * most of the height empty, so the board ends up small. Flattening the tilt
+   * un-foreshortens it and lets the board fill the narrow axis — which is what
+   * prioritising board size in portrait actually requires. It stops short of
+   * dead overhead, because some tilt is what makes the rails look raised.
+   */
+  portraitTiltDegrees: 11,
   /** Aspect at or above which the full tabletop angle is used. */
   landscapeAspect: 1.3,
   /** Aspect at or below which the portrait angle is used. */
   portraitAspect: 0.72,
+  /**
+   * Transition rate, in units of e-foldings per second.
+   *
+   * Used as `1 - exp(-rate·dt)` rather than a fixed per-frame lerp, so the
+   * transition takes the same wall-clock time at 30 FPS and at 144 — a constant
+   * per-frame factor converges more than twice as fast on a high-refresh
+   * display, and the camera would feel different on every device.
+   */
+  transitionRate: 7.5,
   /** Rotation around the board. 0 puts the camera on Player One's side (+Z). */
   azimuthDegrees: 0,
   /** Breathing room around the board edge, as a fraction of the fitted distance. */
@@ -56,18 +79,37 @@ export class CameraManager {
   /** Half-extents of the volume that must stay framed. */
   readonly #bounds: THREE.Vector3;
 
-  #elevation = THREE.MathUtils.degToRad(CAMERA_SETTINGS.elevationDegrees);
+  /** Stored as elevation above the board: 90° − tilt. */
+  #elevation = THREE.MathUtils.degToRad(90 - CAMERA_SETTINGS.tiltDegrees);
   #azimuth = THREE.MathUtils.degToRad(CAMERA_SETTINGS.azimuthDegrees);
   #margin: number = CAMERA_SETTINGS.framingMargin;
   #aspect = 1;
   /** Set only by the dev tuner; when present it overrides aspect-driven elevation. */
   #manualElevation: number | undefined;
 
+  /** Where the framing solver wants the camera; `update` eases toward it. */
+  readonly #targetPosition = new THREE.Vector3();
+  /**
+   * Cinematic displacement, applied on top of the solved framing.
+   *
+   * The cinematic layer supplies an offset rather than writing
+   * `camera.position` itself. Two writers would fight on every resize and the
+   * camera would snap mid-shot; this way the framing solver stays the single
+   * owner of position, and shake or a shot-follow composes on top of it without
+   * ever being able to break the "whole board visible" guarantee.
+   */
+  readonly #offset = new THREE.Vector3();
+  /** Scratch for the eased target; avoids allocating every frame. */
+  readonly #desired = new THREE.Vector3();
+  /** First framing snaps; later ones ease. */
+  #settled = false;
+
   // Scratch vectors, reused every frame-fit to keep the resize path allocation-free.
   readonly #dir = new THREE.Vector3();
   readonly #xAxis = new THREE.Vector3();
   readonly #yAxis = new THREE.Vector3();
-  readonly #offset = new THREE.Vector3();
+  /** Scratch for the bounding-box corner being tested during framing. */
+  readonly #corner = new THREE.Vector3();
   static readonly #UP = new THREE.Vector3(0, 1, 0);
 
   constructor() {
@@ -108,6 +150,30 @@ export class CameraManager {
   }
 
   /**
+   * Ease the camera toward the framing target.
+   *
+   * Called once per rendered frame with the real frame delta.
+   */
+  update(deltaSeconds: number): void {
+    if (!this.#settled) {
+      this.#camera.position.copy(this.#targetPosition).add(this.#offset);
+      this.#camera.lookAt(this.#target);
+      this.#settled = true;
+      return;
+    }
+
+    const alpha = 1 - Math.exp(-CAMERA_SETTINGS.transitionRate * deltaSeconds);
+    this.#desired.copy(this.#targetPosition).add(this.#offset);
+    this.#camera.position.lerp(this.#desired, alpha);
+    this.#camera.lookAt(this.#target);
+  }
+
+  /** Cinematic displacement, in world units. Cleared by passing zero. */
+  setOffset(x: number, y: number, z: number): void {
+    this.#offset.set(x, y, z);
+  }
+
+  /**
    * Elevation for a given aspect ratio.
    *
    * Blends smoothly between the tabletop angle in landscape and the more
@@ -115,8 +181,10 @@ export class CameraManager {
    * snap.
    */
   #autoElevation(aspect: number): number {
-    const { landscapeAspect, portraitAspect, elevationDegrees, portraitElevationDegrees } =
+    const { landscapeAspect, portraitAspect, tiltDegrees, portraitTiltDegrees } =
       CAMERA_SETTINGS;
+    const elevationDegrees = 90 - tiltDegrees;
+    const portraitElevationDegrees = 90 - portraitTiltDegrees;
     const t = THREE.MathUtils.clamp(
       (aspect - portraitAspect) / (landscapeAspect - portraitAspect),
       0,
@@ -155,6 +223,11 @@ export class CameraManager {
 
   get elevationDegrees(): number {
     return THREE.MathUtils.radToDeg(this.#elevation);
+  }
+
+  /** Tilt from straight down — how the spec describes the camera. */
+  get tiltDegrees(): number {
+    return 90 - this.elevationDegrees;
   }
 
   get azimuthDegrees(): number {
@@ -205,16 +278,16 @@ export class CameraManager {
     let distance = 0;
     for (let i = 0; i < 8; i += 1) {
       // Walk the 8 corners via the bits of i.
-      this.#offset.set(
+      this.#corner.set(
         (i & 1 ? 1 : -1) * this.#bounds.x,
         i & 2 ? this.#bounds.y : 0,
         (i & 4 ? 1 : -1) * this.#bounds.z,
       );
-      this.#offset.sub(this.#target);
+      this.#corner.sub(this.#target);
 
-      const qx = this.#offset.dot(this.#xAxis);
-      const qy = this.#offset.dot(this.#yAxis);
-      const qz = this.#offset.dot(this.#dir);
+      const qx = this.#corner.dot(this.#xAxis);
+      const qy = this.#corner.dot(this.#yAxis);
+      const qz = this.#corner.dot(this.#dir);
 
       distance = Math.max(
         distance,
@@ -225,16 +298,20 @@ export class CameraManager {
 
     distance *= this.#margin;
 
-    this.#camera.position
+    // Solve for a target rather than snapping. `update` eases toward it, so a
+    // rotation or an orientation change is a move, not a jump cut.
+    this.#targetPosition
       .copy(this.#dir)
       .multiplyScalar(distance)
       .add(this.#target);
-    this.#camera.lookAt(this.#target);
 
     // Tighten the depth range around the board so the depth buffer keeps its
-    // precision — important once coins cast shadows onto the surface.
-    this.#camera.near = Math.max(0.1, distance - this.#bounds.length() * 2);
-    this.#camera.far = distance + this.#bounds.length() * 2;
+    // precision — important once coins cast shadows onto the surface. Padded
+    // generously because the camera may be mid-transition, and therefore not
+    // yet at `distance`.
+    const span = this.#bounds.length() * 3;
+    this.#camera.near = Math.max(0.1, distance - span);
+    this.#camera.far = distance + span;
     this.#camera.updateProjectionMatrix();
   }
 }
