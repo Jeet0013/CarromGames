@@ -64,9 +64,9 @@ export class AudioManager {
   };
 
   constructor(events: EventBus) {
-    events.on('physics:contact', ({ kind, impact }) => {
+    events.on('physics:contact', ({ kind, impact, a, b }) => {
       if (kind === 'rail') this.playRailHit(impact);
-      else this.playCoinHit(impact);
+      else this.playCoinHit(impact, a === 'striker' || b === 'striker');
     });
 
     events.on('pocket:scored', () => this.playPocket());
@@ -168,13 +168,27 @@ export class AudioManager {
   }
 
   /**
-   * Coin-on-coin or striker-on-coin: a sharp wooden "tok".
+   * Coin-on-coin, or the striker driving into the pack.
    *
-   * Two layers — a filtered noise transient for the attack, and a short
-   * triangle body for the pitch. Harder hits are brighter and slightly higher,
-   * which is how the ear judges force.
+   * ## Why modal synthesis rather than an oscillator
+   *
+   * A struck wooden disc does not produce a pitch. It rings in several modes at
+   * once, at frequencies that are *not* harmonic multiples, and each mode decays
+   * at its own rate — the high ones die first, which is what makes a wooden
+   * clack sound bright at the very start and hollow a moment later.
+   *
+   * The first version used one triangle oscillator with an exponential decay.
+   * That is a single harmonic pitch, and it reads as a plastic click no matter
+   * how the envelope is shaped. Three inharmonic partials at roughly 1 : 2.4 :
+   * 4.1 — close to the mode ratios of a stiff disc — plus a noise transient for
+   * the initial contact and a low board resonance underneath, is what actually
+   * sounds like wood on wood.
+   *
+   * Real coins also never sound *identical* twice, because they are struck at
+   * slightly different points. A small random detune per hit prevents the
+   * machine-gun sameness a fixed pitch gives during a scatter.
    */
-  playCoinHit(impact: number): void {
+  playCoinHit(impact: number, involvesStriker = false): void {
     const context = this.#canPlay();
     if (!context || !this.#master) return;
 
@@ -182,35 +196,64 @@ export class AudioManager {
     if (strength < 0.02) return;
 
     const now = context.currentTime;
-    const volume = 0.06 + strength * 0.3;
-    const decay = 0.05 + strength * 0.03;
+    const volume = 0.05 + strength * 0.3;
 
-    // Attack transient.
+    // The striker is larger and heavier than a coin, so it rings lower.
+    const base = (involvesStriker ? 430 : 660) * (0.92 + Math.random() * 0.16);
+
+    // Mode ratios and per-mode decay. Higher modes fade fastest, as in wood.
+    const modes: Array<[ratio: number, gain: number, decay: number]> = [
+      [1, 1, 0.13],
+      [2.41, 0.55, 0.075],
+      [4.12, 0.28, 0.042],
+    ];
+
+    let longest = 0;
+    for (const [ratio, modeGain, modeDecay] of modes) {
+      const decay = modeDecay * (0.75 + strength * 0.45);
+      longest = Math.max(longest, decay);
+
+      const osc = context.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(base * ratio, now);
+      // Slight downward glide: the disc detunes as the strike energy dissipates.
+      osc.frequency.exponentialRampToValueAtTime(base * ratio * 0.97, now + decay);
+
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(volume * modeGain, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + decay);
+
+      osc.connect(gain).connect(this.#master);
+      osc.start(now);
+      osc.stop(now + decay + 0.01);
+    }
+
+    // Contact transient — the click of two edges meeting, before anything rings.
     const noise = this.#noise(context);
-    const noiseFilter = context.createBiquadFilter();
-    noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.value = 1600 + strength * 2400;
-    noiseFilter.Q.value = 1.2;
+    const bandpass = context.createBiquadFilter();
+    bandpass.type = 'bandpass';
+    bandpass.frequency.value = 2200 + strength * 2600;
+    bandpass.Q.value = 0.9;
     const noiseGain = context.createGain();
-    noiseGain.gain.setValueAtTime(volume * 0.7, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + decay * 0.6);
-    noise.connect(noiseFilter).connect(noiseGain).connect(this.#master);
+    noiseGain.gain.setValueAtTime(volume * 0.5, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.016);
+    noise.connect(bandpass).connect(noiseGain).connect(this.#master);
     noise.start(now);
-    noise.stop(now + decay);
-    this.#trackVoice(now + decay);
+    noise.stop(now + 0.03);
 
-    // Pitched body.
-    const osc = context.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(520 + strength * 460, now);
-    osc.frequency.exponentialRampToValueAtTime(300, now + decay);
-    const oscGain = context.createGain();
-    oscGain.gain.setValueAtTime(volume, now);
-    oscGain.gain.exponentialRampToValueAtTime(0.0001, now + decay);
-    osc.connect(oscGain).connect(this.#master);
-    osc.start(now);
-    osc.stop(now + decay + 0.02);
-    this.#trackVoice(now + decay + 0.02);
+    // The plywood board resonating under the strike. Quiet, but it is the
+    // difference between coins in mid-air and coins on a table.
+    const body = context.createOscillator();
+    body.type = 'sine';
+    body.frequency.setValueAtTime(168 + strength * 40, now);
+    const bodyGain = context.createGain();
+    bodyGain.gain.setValueAtTime(volume * 0.34, now);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
+    body.connect(bodyGain).connect(this.#master);
+    body.start(now);
+    body.stop(now + 0.13);
+
+    this.#trackVoice(now + Math.max(longest, 0.13) + 0.02);
   }
 
   /** Rail hit: lower and duller — the frame absorbs the high end. */

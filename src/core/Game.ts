@@ -17,6 +17,10 @@ import { Notifications } from '../ui/Notifications';
 import { AudioManager } from '../audio/AudioManager';
 import { SoundToggle } from '../ui/SoundToggle';
 import { GameHUD, SEAT_ACCENTS, type SeatConfig } from '../ui/GameHUD';
+import { MainMenu } from '../ui/MainMenu';
+import { Tutorial } from '../ui/Tutorial';
+import { HelpButton } from '../ui/HelpButton';
+import { SaveManager } from '../storage/SaveManager';
 import { PlayerSide } from './PlayerSide';
 import { GameMode, PlayerSlot } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
@@ -56,6 +60,10 @@ export class Game {
   readonly #audio: AudioManager;
   readonly #soundToggle: SoundToggle;
   readonly #hud: GameHUD;
+  readonly #menu: MainMenu;
+  readonly #tutorial: Tutorial;
+  readonly #helpButton: HelpButton;
+  readonly #save = new SaveManager();
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
 
@@ -105,6 +113,11 @@ export class Game {
     this.#audio = new AudioManager(this.events);
     this.#soundToggle = new SoundToggle(container, this.#audio);
 
+    this.#menu = new MainMenu(container, (mode) => this.#startMode(mode));
+    this.#tutorial = new Tutorial(container, () => {
+      this.#save.update({ hasSeenTutorial: true });
+    });
+    this.#helpButton = new HelpButton(container, () => this.#tutorial.show());
     this.#hud = new GameHUD(container, this.events);
     this.#notifications = new Notifications(container);
     this.events.on('ui:notify', ({ message, tone }) =>
@@ -199,6 +212,29 @@ export class Game {
     this.resetBoard();
   }
 
+  get menu(): MainMenu {
+    return this.#menu;
+  }
+
+  /** Return to mode selection. Panels are cleared so none linger. */
+  showMenu(): void {
+    this.#hud.setSeats([]);
+    this.#notifications.setBanner(null);
+    this.#menu.show();
+  }
+
+  /** Chosen from the menu: configure the mode, then hand over the board. */
+  #startMode(mode: GameMode): void {
+    this.#menu.hide();
+    this.setMode(mode);
+    this.#turns.start();
+
+    // Teach the controls the first time only. The turn machine is already
+    // running underneath, so a player who dismisses it immediately loses
+    // nothing — the board is waiting exactly as they left it.
+    if (!this.#save.data.hasSeenTutorial) this.#tutorial.show();
+  }
+
   get input(): InputManager {
     return this.#input;
   }
@@ -219,10 +255,10 @@ export class Game {
 
   start(): void {
     if (this.#disposed) throw new Error('Game has been disposed');
-    // Two-player local is the default until the main menu lands.
-    this.setMode(GameMode.LocalMultiplayer);
-    this.#turns.start();
+    // The loop runs from the outset so the board is live behind the menu —
+    // the menu sits on the table rather than replacing it.
     this.#loop.start();
+    this.showMenu();
     this.events.emit('game:ready');
   }
 
@@ -323,6 +359,9 @@ export class Game {
     this.#cameraTuner = undefined;
 
     window.removeEventListener('keydown', this.#onDebugKey);
+    this.#helpButton.dispose();
+    this.#tutorial.dispose();
+    this.#menu.dispose();
     this.#hud.dispose();
     this.#soundToggle.dispose();
     this.#audio.dispose();
