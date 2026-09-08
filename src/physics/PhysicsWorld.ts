@@ -65,6 +65,18 @@ export class PhysicsWorld {
   /** Static rail bodies, kept for teardown. */
   readonly #rails: RAPIER.RigidBody[] = [];
 
+  /**
+   * Board friction multiplier, 1 = bare board.
+   *
+   * Powdering a Carrom board is a real part of playing it: boric acid powder
+   * is scattered to cut friction so coins glide. It wears off as coins sweep
+   * it aside, so this decays back to 1 rather than toggling — which is what
+   * makes it a resource to spend rather than a switch to leave on.
+   */
+  #frictionScale = 1;
+  #powderRemaining = 0;
+  #powderDuration = 0;
+
   // Rest detection.
   #restTimer = 0;
   #settleElapsed = 0;
@@ -207,6 +219,27 @@ export class PhysicsWorld {
     this.#watching = false;
   }
 
+  /** 0–1: how much powder is still on the board. Drives the visual fade. */
+  get powderLevel(): number {
+    return this.#powderDuration > 0 ? this.#powderRemaining / this.#powderDuration : 0;
+  }
+
+  get frictionScale(): number {
+    return this.#frictionScale;
+  }
+
+  /**
+   * Scatter powder on the board.
+   *
+   * @param strength  friction multiplier at full effect (0.55 ≈ 45% slicker)
+   * @param seconds   how long it lasts before the board is bare again
+   */
+  applyPowder(strength = 0.55, seconds = 40): void {
+    this.#powderDuration = seconds;
+    this.#powderRemaining = seconds;
+    this.#frictionScale = strength;
+  }
+
   /** Apply a planar impulse. The single place shot force enters the world. */
   applyImpulse(id: string, x: number, z: number): void {
     const handle = this.#bodies.get(id);
@@ -233,6 +266,7 @@ export class PhysicsWorld {
    * cannot leave a body above the ceiling.
    */
   step(delta: number): void {
+    this.#updatePowder(delta);
     this.#applySurfaceFriction(delta);
     this.#world.step(this.#queue);
     this.#collisions.process(this.#queue);
@@ -249,9 +283,28 @@ export class PhysicsWorld {
    * a coin to exactly zero but never push it backwards — the failure that
    * makes naive implementations jitter around rest.
    */
+  /**
+   * Wear the powder off.
+   *
+   * Eased rather than linear: powder feels slick for most of its life and then
+   * fades, instead of the board getting steadily stickier from the first shot,
+   * which would make the effect hard to notice at all.
+   */
+  #updatePowder(delta: number): void {
+    if (this.#powderRemaining <= 0) {
+      this.#frictionScale = 1;
+      return;
+    }
+    this.#powderRemaining = Math.max(0, this.#powderRemaining - delta);
+    const level = this.#powderRemaining / this.#powderDuration;
+    const eased = level * level * (3 - 2 * level);
+    // Interpolate from bare board (1) toward the powdered value.
+    this.#frictionScale = 1 - (1 - 0.55) * eased;
+  }
+
   #applySurfaceFriction(delta: number): void {
     const g = Math.abs(PHYSICS_CONFIG.GRAVITY_Y);
-    const decel = PHYSICS_CONFIG.BOARD_FRICTION * g * delta;
+    const decel = PHYSICS_CONFIG.BOARD_FRICTION * this.#frictionScale * g * delta;
 
     for (const handle of this.#bodies.values()) {
       const body = handle.body;

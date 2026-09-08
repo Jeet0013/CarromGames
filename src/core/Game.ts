@@ -26,6 +26,8 @@ import { AIPlayer } from '../ai/AIPlayer';
 import { AIDifficulty } from '../ai/AIDifficulty';
 import { PocketEffect } from '../effects/PocketEffect';
 import { VictoryScreen } from '../ui/VictoryScreen';
+import { PowderEffect } from '../effects/PowderEffect';
+import { PowderCan } from '../ui/PowderCan';
 import { PlayerSide } from './PlayerSide';
 import { GameMode, PlayerSlot } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
@@ -73,6 +75,8 @@ export class Game {
   readonly #ai: AIPlayer;
   readonly #pocketEffect: PocketEffect;
   readonly #victory: VictoryScreen;
+  readonly #powder: PowderEffect;
+  readonly #powderCan: PowderCan;
   #lastMode: GameMode = GameMode.LocalMultiplayer;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
@@ -116,6 +120,14 @@ export class Game {
     // Confirmation lands where the player is already looking — at the pocket.
     this.#pocketEffect = new PocketEffect();
     this.#scene.addPermanent(this.#pocketEffect.group);
+
+    this.#powder = new PowderEffect();
+    this.#scene.addPermanent(this.#powder.group);
+    this.#powderCan = new PowderCan(container, () => {
+      this.#physics.applyPowder();
+      this.#powder.burst();
+      this.events.emit('ui:notify', { message: 'BOARD POWDERED', tone: 'good' });
+    });
     this.events.on('pocket:scored', ({ pocketIndex }) =>
       this.#pocketEffect.play(pocketIndex),
     );
@@ -393,6 +405,11 @@ export class Game {
     // one is ever seen.
     this.#pieces.sync();
     this.#pocketEffect.update(frameDelta);
+    // The visual reads the physics world's own powder level, so what is shown
+    // and what the coins feel can never drift apart.
+    const powderLevel = this.#physics.powderLevel;
+    this.#powder.update(frameDelta, powderLevel);
+    this.#powderCan.setLevel(powderLevel);
     this.#physicsDebug?.update();
     this.#renderer.render(this.#scene.scene, this.#camera.camera);
   }
@@ -454,6 +471,8 @@ export class Game {
     this.#cameraTuner = undefined;
 
     window.removeEventListener('keydown', this.#onDebugKey);
+    this.#powderCan.dispose();
+    this.#powder.dispose();
     this.#victory.dispose();
     this.#pocketEffect.dispose();
     this.#difficultySelect.dispose();

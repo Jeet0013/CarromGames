@@ -115,7 +115,18 @@ export function clampToBaseline(
  */
 export function isForwardShot(side: PlayerSide, direction: BoardPoint): boolean {
   const inward = GEOMETRY[side].inward;
-  return direction.x * inward.x + direction.z * inward.z > 0;
+  const forward = direction.x * inward.x + direction.z * inward.z;
+
+  /*
+   * Only a clearly backward shot is rejected.
+   *
+   * Requiring a strictly positive forward component blocked bank shots: firing
+   * along your own baseline into a side rail is a legitimate and common Carrom
+   * shot, and its forward component is exactly zero. A small negative
+   * allowance also permits the slightly-behind angles a rail rebound needs,
+   * while still refusing a shot aimed off the back of the board.
+   */
+  return forward > -0.2;
 }
 
 /** Seat order clockwise from the bottom — the turn order for four-player. */
