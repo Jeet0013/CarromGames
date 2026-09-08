@@ -332,6 +332,51 @@ export class AudioManager {
     thud.start(now + 0.16);
     thud.stop(now + 0.42);
     this.#trackVoice(now + 0.42);
+
+    this.playCheer();
+  }
+
+  /**
+   * A short rising chime after a pocket.
+   *
+   * Recorded crowd noise would be wrong here — this is a tabletop game, not a
+   * stadium, and a canned cheer on every coin becomes grating within a minute.
+   * A three-note major arpeggio reads as *reward* rather than applause: it is
+   * brief, it rises, and because it is harmonically consonant it sits under the
+   * wooden clacks instead of fighting them.
+   */
+  playCheer(): void {
+    if (!this.#settings.sfxEnabled) return;
+    const context = this.#context;
+    if (!context || !this.#master) return;
+
+    // Captured locally: TypeScript cannot narrow a private field across the
+    // closure below, and the field is optional until audio unlocks.
+    const master = this.#master;
+    const now = context.currentTime;
+    // Root, major third, fifth — a plain major triad, arpeggiated upward.
+    const notes = [523.25, 659.25, 783.99];
+
+    notes.forEach((frequency, index) => {
+      const start = now + 0.16 + index * 0.075;
+      const duration = 0.3;
+
+      const osc = context.createOscillator();
+      // Triangle rather than sine: a little more harmonic content so it carries
+      // over the board resonance without needing to be loud.
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(frequency, start);
+
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.13, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+      osc.connect(gain).connect(master);
+      osc.start(start);
+      osc.stop(start + duration + 0.02);
+      this.#trackVoice(start + duration + 0.02);
+    });
   }
 
   dispose(): void {

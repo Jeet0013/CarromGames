@@ -56,14 +56,25 @@ export const PHYSICS_CONFIG = {
    * the usual shortcut — only ever approaches zero asymptotically, so coins
    * creep forever and rest detection degenerates into an arbitrary cutoff.
    */
-  BOARD_FRICTION: 0.14,
+  /*
+   * Tuned down from 0.14 after play-testing: a 40-turn match produced a single
+   * pocketed coin. At 0.14 the deceleration is ~13.7 u/s², so a coin struck at
+   * 8 u/s stops after 2.3 units — while the board's half-diagonal is 5.2. Coins
+   * were dying before they could reach a corner, which made pocketing almost
+   * impossible rather than merely hard.
+   *
+   * 0.085 gives ~8.3 u/s², so the same strike carries 3.9 units and a firm one
+   * crosses the board. That also matches how a real board behaves once it has
+   * been powdered — which is the feel being aimed for.
+   */
+  BOARD_FRICTION: 0.085,
   /** Contact friction between two pieces, used by the solver. */
   COIN_FRICTION: 0.12,
   STRIKER_FRICTION: 0.1,
   /** Frame rails. Low, so rebounds keep their pace. */
   WALL_FRICTION: 0.08,
   /** Angular equivalent of `BOARD_FRICTION`; bleeds spin off a sliding coin. */
-  SPIN_FRICTION: 2.2,
+  SPIN_FRICTION: 1.7,
 
   // ── Restitution (bounciness) ────────────────────────────────────────────
   /** Coin-on-coin: a crisp click with real energy transfer. */
@@ -78,7 +89,7 @@ export const PHYSICS_CONFIG = {
    * for air resistance and the powder on a real board. Deliberately low —
    * `BOARD_FRICTION` does the real work of stopping a coin.
    */
-  LINEAR_DAMPING: 0.12,
+  LINEAR_DAMPING: 0.07,
   ANGULAR_DAMPING: 0.4,
 
   // ── Mass ────────────────────────────────────────────────────────────────

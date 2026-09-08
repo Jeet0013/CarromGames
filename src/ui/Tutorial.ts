@@ -92,6 +92,55 @@ export class Tutorial {
     ].join(';');
     STEPS.forEach((step, index) => steps.append(this.#buildStep(step, index + 1)));
 
+    // ── Rules ─────────────────────────────────────────────────────────────
+    // Controls alone are not enough: a player who does not know the win
+    // condition has no way to tell whether they are doing well.
+    const rules = document.createElement('div');
+    rules.style.cssText = [
+      'display:flex',
+      'flex-direction:column',
+      'gap:7px',
+      'width:min(720px, 100%)',
+      'padding:14px 16px',
+      'border-radius:14px',
+      'border:1px solid rgba(176,122,69,0.26)',
+      'background:rgba(24,20,16,0.7)',
+    ].join(';');
+
+    const rulesTitle = document.createElement('span');
+    rulesTitle.textContent = 'How to win';
+    rulesTitle.style.cssText = [
+      'font:600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'letter-spacing:0.18em',
+      'text-transform:uppercase',
+      'color:#e8a33d',
+    ].join(';');
+
+    const list = document.createElement('ul');
+    list.style.cssText = [
+      'margin:0',
+      'padding-left:17px',
+      'display:flex',
+      'flex-direction:column',
+      'gap:5px',
+      'font:400 12.5px/1.5 system-ui, -apple-system, sans-serif',
+      'color:#c9bdae',
+    ].join(';');
+
+    for (const rule of [
+      'The first coin you pocket claims that colour — light or dark. The other colour becomes your opponent\u2019s.',
+      'Pocket one of your own coins and you shoot again. Miss, and the turn passes.',
+      'Pocket the red Queen and you must cover her by pocketing one of your own coins on the next shot, or she goes back to the centre.',
+      'Pocket the striker and it is a foul: your turn ends and one of your coins returns to the board.',
+      'Win by pocketing all nine of your colour — with the Queen covered.',
+    ]) {
+      const item = document.createElement('li');
+      item.textContent = rule;
+      list.append(item);
+    }
+
+    rules.append(rulesTitle, list);
+
     const done = document.createElement('button');
     done.type = 'button';
     done.textContent = 'Got it';
@@ -113,7 +162,7 @@ export class Tutorial {
       this.#onDismiss();
     });
 
-    this.#root.append(heading, steps, done);
+    this.#root.append(heading, steps, rules, done);
     container.append(this.#root);
   }
 

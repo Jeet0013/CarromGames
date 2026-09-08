@@ -32,7 +32,6 @@ export const MENU_OPTIONS: readonly MenuOption[] = [
     blurb: 'One player against the machine. Four difficulty levels.',
     tag: '1 Player',
     accent: '#4fb3c4',
-    lockedReason: 'Coming next',
   },
   {
     mode: GameMode.LocalMultiplayer,

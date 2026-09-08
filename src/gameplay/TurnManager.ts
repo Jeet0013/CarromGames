@@ -29,7 +29,7 @@ import {
 import { TurnOrderManager } from './TurnOrderManager';
 import { strikerHome, type PlayerSide } from '../core/PlayerSide';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
-import { PIECE_GEOMETRY } from '../physics/PhysicsConfig';
+import { PIECE_GEOMETRY, powerToImpulse } from '../physics/PhysicsConfig';
 import type { PieceFactory } from '../pieces/PieceFactory';
 import type { PocketManager } from './PocketManager';
 import { findFreePlacement } from './Placement';
@@ -44,6 +44,7 @@ import {
   QueenState,
   TurnState,
   type BoardPoint,
+  type ShotCommand,
 } from '../core/types';
 
 /** Legal transitions, declared as data so an illegal one is caught centrally. */
@@ -196,6 +197,22 @@ export class TurnManager {
   cancelAiming(): void {
     if (this.#state !== TurnState.Aiming) return;
     this.#transition(TurnState.StrikerPositioning);
+  }
+
+  /**
+   * Fire a shot. The single entry point for *both* controllers.
+   *
+   * Human input and the AI both hand a `ShotCommand` here, and from this line
+   * on there is no code path that knows which produced it. That is what makes
+   * "the AI must not cheat" structural rather than a promise — the AI has no
+   * way to apply force except the one the player uses.
+   */
+  executeShot(shot: ShotCommand): boolean {
+    if (!this.beginShot()) return false;
+    const impulse = powerToImpulse(shot.power);
+    this.#physics.applyImpulse('striker', shot.direction.x * impulse, shot.direction.z * impulse);
+    this.#events.emit('shot:fired', { by: this.currentPlayer, shot });
+    return true;
   }
 
   beginShot(): boolean {

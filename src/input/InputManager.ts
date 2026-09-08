@@ -19,7 +19,6 @@ import * as THREE from 'three';
 
 import { BOARD_CONFIG } from '../board/BoardConfig';
 import { clampToBaseline, isForwardShot, strikerHome } from '../core/PlayerSide';
-import type { EventBus } from '../core/EventBus';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import type { PieceFactory } from '../pieces/PieceFactory';
 import type { TurnManager } from '../gameplay/TurnManager';
@@ -27,7 +26,7 @@ import { AimSystem } from './AimSystem';
 import { detectProfile, type ControlProfile } from './ControlProfile';
 import { DesktopControls } from './DesktopControls';
 import { MobileControls } from './MobileControls';
-import { PHYSICS_CONFIG, PIECE_GEOMETRY, dragToPower, powerToImpulse } from '../physics/PhysicsConfig';
+import { PHYSICS_CONFIG, PIECE_GEOMETRY, dragToPower } from '../physics/PhysicsConfig';
 import type { BoardPoint, ShotCommand } from '../core/types';
 
 type Gesture = 'none' | 'positioning' | 'aiming';
@@ -38,9 +37,11 @@ export class InputManager {
   readonly #physics: PhysicsWorld;
   readonly #pieces: PieceFactory;
   readonly #turns: TurnManager;
-  readonly #events: EventBus;
   readonly #aim: AimSystem;
   readonly #profile: ControlProfile;
+
+  /** Set by Game; true while an AI controller owns the turn. */
+  #isLocked: (() => boolean) | undefined;
 
   #gesture: Gesture = 'none';
   #pointerId: number | null = null;
@@ -61,7 +62,6 @@ export class InputManager {
     physics: PhysicsWorld;
     pieces: PieceFactory;
     turns: TurnManager;
-    events: EventBus;
     uiContainer: HTMLElement;
   }) {
     this.#canvas = options.canvas;
@@ -69,7 +69,6 @@ export class InputManager {
     this.#physics = options.physics;
     this.#pieces = options.pieces;
     this.#turns = options.turns;
-    this.#events = options.events;
 
     this.#profile = detectProfile(DesktopControls, MobileControls);
     this.#aim = new AimSystem(options.uiContainer);
@@ -93,6 +92,11 @@ export class InputManager {
     return this.#profile;
   }
 
+  /** Supply a predicate that blocks input, e.g. during the computer's turn. */
+  setLock(predicate: () => boolean): void {
+    this.#isLocked = predicate;
+  }
+
   /** Put the striker at the centre of the active seat's baseline. */
   resetStriker(): void {
     const home = strikerHome(this.#turns.currentSide);
@@ -112,8 +116,10 @@ export class InputManager {
   }
 
   readonly #onPointerDown = (event: PointerEvent): void => {
-    // The gate: nothing reaches the striker unless the turn machine says so.
+    // The gate: nothing reaches the striker unless the turn machine says so,
+    // and never while the computer owns the turn.
     if (!this.#turns.acceptsInput) return;
+    if (this.#isLocked?.()) return;
     if (this.#pointerId !== null) return; // ignore a second finger
 
     const point = this.#toBoard(event);
@@ -247,13 +253,9 @@ export class InputManager {
       return;
     }
 
-    if (!this.#turns.beginShot()) return;
-
-    const impulse = powerToImpulse(power);
-    this.#physics.applyImpulse('striker', direction.x * impulse, direction.z * impulse);
-
+    // Shared with the AI — see TurnManager.executeShot.
     const shot: ShotCommand = { origin: striker, direction, power };
-    this.#events.emit('shot:fired', { by: this.#turns.currentPlayer, shot });
+    this.#turns.executeShot(shot);
   }
 
   /** Board bounds, exposed for tests and the debug overlay. */

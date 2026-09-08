@@ -98,7 +98,13 @@ export const BOARD_CONFIG = {
      * a coin only counts once it is genuinely over the hole rather than
      * clipping the lip.
      */
-    sensorRadius: POCKET_RADIUS * 0.9,
+    /*
+     * Widened from 0.9. A real pocket swallows a coin once its centre is
+     * roughly over the opening, and at 0.9 coins were skimming the lip and
+     * surviving shots that should have dropped. Still under the full opening,
+     * so a coin resting beside the hole is not counted.
+     */
+    sensorRadius: POCKET_RADIUS * 1.02,
     /** How far below the surface a pocketed piece falls before removal. */
     dropDepth: cm(4),
   },

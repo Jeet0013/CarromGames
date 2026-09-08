@@ -21,6 +21,11 @@ import { MainMenu } from '../ui/MainMenu';
 import { Tutorial } from '../ui/Tutorial';
 import { HelpButton } from '../ui/HelpButton';
 import { SaveManager } from '../storage/SaveManager';
+import { DifficultySelect } from '../ui/DifficultySelect';
+import { AIPlayer } from '../ai/AIPlayer';
+import { AIDifficulty } from '../ai/AIDifficulty';
+import { PocketEffect } from '../effects/PocketEffect';
+import { VictoryScreen } from '../ui/VictoryScreen';
 import { PlayerSide } from './PlayerSide';
 import { GameMode, PlayerSlot } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
@@ -64,6 +69,11 @@ export class Game {
   readonly #tutorial: Tutorial;
   readonly #helpButton: HelpButton;
   readonly #save = new SaveManager();
+  readonly #difficultySelect: DifficultySelect;
+  readonly #ai: AIPlayer;
+  readonly #pocketEffect: PocketEffect;
+  readonly #victory: VictoryScreen;
+  #lastMode: GameMode = GameMode.LocalMultiplayer;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
 
@@ -102,6 +112,15 @@ export class Game {
 
     // Pockets must exist before turns: the turn machine reads the shot log.
     this.#pockets = new PocketManager(this.events, this.#physics, this.#pieces);
+
+    // Confirmation lands where the player is already looking — at the pocket.
+    this.#pocketEffect = new PocketEffect();
+    this.#scene.addPermanent(this.#pocketEffect.group);
+    this.events.on('pocket:scored', ({ pocketIndex }) =>
+      this.#pocketEffect.play(pocketIndex),
+    );
+
+    this.events.on('rules:gameComplete', ({ winner }) => this.#showResult(winner));
     this.#turns = new TurnManager(
       this.events,
       this.#physics,
@@ -113,11 +132,25 @@ export class Game {
     this.#audio = new AudioManager(this.events);
     this.#soundToggle = new SoundToggle(container, this.#audio);
 
+    this.#victory = new VictoryScreen(
+      container,
+      () => this.#startMode(this.#lastMode),
+      () => this.showMenu(),
+    );
     this.#menu = new MainMenu(container, (mode) => this.#startMode(mode));
     this.#tutorial = new Tutorial(container, () => {
       this.#save.update({ hasSeenTutorial: true });
     });
     this.#helpButton = new HelpButton(container, () => this.#tutorial.show());
+    this.#difficultySelect = new DifficultySelect(
+      container,
+      (difficulty) => this.#startVsComputer(difficulty),
+      () => {
+        this.#difficultySelect.hide();
+        this.#menu.show();
+      },
+    );
+
     this.#hud = new GameHUD(container, this.events);
     this.#notifications = new Notifications(container);
     this.events.on('ui:notify', ({ message, tone }) =>
@@ -126,16 +159,28 @@ export class Game {
     this.events.on('queen:banner', ({ message }) =>
       this.#notifications.setBanner(message),
     );
+    // Locks the pointer out while the computer is playing. Routed through the
+    // same `acceptsInput` gate humans pass, so there is no second code path.
     this.#input = new InputManager({
       canvas: this.#canvas,
       camera: this.#camera.camera,
       physics: this.#physics,
       pieces: this.#pieces,
       turns: this.#turns,
-      events: this.events,
       uiContainer: container,
     });
     this.#scene.addPermanent(this.#input.aimSystem.group);
+
+    // Built after the input layer because it drives the *same* AimSystem the
+    // player sees, rather than a private one.
+    this.#ai = new AIPlayer(
+      this.events,
+      this.#physics,
+      this.#pieces,
+      this.#turns,
+      this.#input.aimSystem,
+    );
+    this.#input.setLock(() => this.#ai.isActing);
 
     if (IS_DEV) {
       this.#physicsDebug = new PhysicsDebugRenderer(this.#physics);
@@ -212,8 +257,43 @@ export class Game {
     this.resetBoard();
   }
 
+  /** Announce the result in the winner's own terms. */
+  #showResult(winner: PlayerSlot): void {
+    const seats = SEAT_LAYOUTS[this.#lastMode];
+    const seat = seats.find((s) => s.slot === winner);
+    const vsComputer = this.#lastMode === GameMode.QuickMatch;
+    const humanWon = winner === PlayerSlot.One;
+
+    this.#victory.show({
+      headline: vsComputer
+        ? humanWon
+          ? 'YOU WIN'
+          : 'COMPUTER WINS'
+        : `${seat?.name ?? 'Player'} WINS`,
+      subtitle: humanWon
+        ? 'All nine coins pocketed, with the Queen settled.'
+        : 'All nine of their coins pocketed, with the Queen settled.',
+      playerWon: humanWon,
+    });
+  }
+
   get menu(): MainMenu {
     return this.#menu;
+  }
+
+  get ai(): AIPlayer {
+    return this.#ai;
+  }
+
+  /** Start a match against the computer at the chosen difficulty. */
+  #startVsComputer(difficulty: AIDifficulty): void {
+    this.#difficultySelect.hide();
+    this.setMode(GameMode.QuickMatch);
+    // The AI takes the top seat; the human keeps the bottom one.
+    this.#ai.configure(PlayerSlot.Two, difficulty);
+    this.#save.update({ settings: { ...this.#save.data.settings } });
+    this.#turns.start();
+    this.#tutorial.show();
   }
 
   /** Return to mode selection. Panels are cleared so none linger. */
@@ -225,14 +305,25 @@ export class Game {
 
   /** Chosen from the menu: configure the mode, then hand over the board. */
   #startMode(mode: GameMode): void {
+    this.#lastMode = mode;
+    this.#victory.hide();
+    // Playing the computer needs a difficulty before a match can begin.
+    if (mode === GameMode.QuickMatch) {
+      this.#menu.hide();
+      this.#difficultySelect.show();
+      return;
+    }
+
     this.#menu.hide();
+    // Any human-only mode must switch the AI off, or it would keep acting.
+    this.#ai.configure(null, AIDifficulty.Normal);
     this.setMode(mode);
     this.#turns.start();
 
-    // Teach the controls the first time only. The turn machine is already
-    // running underneath, so a player who dismisses it immediately loses
-    // nothing — the board is waiting exactly as they left it.
-    if (!this.#save.data.hasSeenTutorial) this.#tutorial.show();
+    // Shown at the start of every match, not just the first. It carries the
+    // win condition as well as the controls, and one tap dismisses it — the
+    // board is already waiting underneath.
+    this.#tutorial.show();
   }
 
   get input(): InputManager {
@@ -284,6 +375,9 @@ export class Game {
 
   #fixedUpdate(delta: number): void {
     this.#physics.step(delta);
+    // Advanced on the fixed step so thinking delays are frame-rate independent
+    // and can never stall rendering.
+    this.#ai.update(delta);
     // Detection runs before the turn machine: a piece pocketed on this step
     // must be logged before the same step can declare the shot settled.
     this.#pockets.update(delta);
@@ -298,6 +392,7 @@ export class Game {
     // per fixed step: several steps can run in one frame, and only the last
     // one is ever seen.
     this.#pieces.sync();
+    this.#pocketEffect.update(frameDelta);
     this.#physicsDebug?.update();
     this.#renderer.render(this.#scene.scene, this.#camera.camera);
   }
@@ -359,6 +454,9 @@ export class Game {
     this.#cameraTuner = undefined;
 
     window.removeEventListener('keydown', this.#onDebugKey);
+    this.#victory.dispose();
+    this.#pocketEffect.dispose();
+    this.#difficultySelect.dispose();
     this.#helpButton.dispose();
     this.#tutorial.dispose();
     this.#menu.dispose();

@@ -129,7 +129,20 @@ export class PocketManager {
       const previous = this.#previous.get(piece.id) ?? current;
 
       const pocketIndex = this.#sweptPocketHit(previous, current);
-      if (pocketIndex >= 0) this.#pocket(piece, pocketIndex);
+      if (pocketIndex >= 0) {
+        this.#pocket(piece, pocketIndex);
+        // Must not fall through to the re-seed below. `#pocket` clears this
+        // piece's previous position precisely so a later restore starts fresh;
+        // storing `current` here would put the *pocket's* coordinates back.
+        //
+        // That was a real bug: a striker restored to its baseline after a foul
+        // then had a previous position inside the pocket, so the swept test
+        // drew a segment from the pocket to the baseline, found it passed
+        // through the pocket, and instantly pocketed it again — leaving an
+        // invisible striker and a board that could not be played. Returned
+        // coins and the Queen were hit by the same thing.
+        continue;
+      }
 
       this.#previous.set(piece.id, current);
     }
