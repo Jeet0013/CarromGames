@@ -121,3 +121,4 @@ limitations, recommended next phase.
 - Phase 6 — [`reports/phase-06.md`](./reports/phase-06.md)
 - Phase 7 — [`reports/phase-07.md`](./reports/phase-07.md) (includes Queen logic)
 - Phase 8 — [`reports/phase-08.md`](./reports/phase-08.md) (two-player mode)
+- Phase 9 — [`reports/phase-09.md`](./reports/phase-09.md) (four-player, partial)

@@ -23,12 +23,35 @@ export const CoinColor = {
 } as const;
 export type CoinColor = (typeof CoinColor)[keyof typeof CoinColor];
 
-/** Seat at the board. Local play and AI both map onto these. */
+/**
+ * Seat at the board.
+ *
+ * Four slots exist regardless of mode; a two-player match simply uses two of
+ * them. Keeping the set fixed means turn order, scoring, and the HUD are all
+ * driven by which slots a mode *enables*, rather than by branching on a player
+ * count — which is what stopped four-player from being a rewrite.
+ */
 export const PlayerSlot = {
   One: 'PLAYER_ONE',
   Two: 'PLAYER_TWO',
+  Three: 'PLAYER_THREE',
+  Four: 'PLAYER_FOUR',
 } as const;
 export type PlayerSlot = (typeof PlayerSlot)[keyof typeof PlayerSlot];
+
+/** Team identity. Unused in individual play, but always present in the type. */
+export const TeamId = {
+  A: 'TEAM_A',
+  B: 'TEAM_B',
+} as const;
+export type TeamId = (typeof TeamId)[keyof typeof TeamId];
+
+/** How a four-player match is contested. */
+export const FourPlayerMode = {
+  Teams: 'TEAMS',
+  FreeForAll: 'FREE_FOR_ALL',
+} as const;
+export type FourPlayerMode = (typeof FourPlayerMode)[keyof typeof FourPlayerMode];
 
 /** Who supplies the shot for a seat. A remote source slots in here later. */
 export const ControllerKind = {
@@ -86,6 +109,7 @@ export const GameMode = {
   QuickMatch: 'QUICK_MATCH',
   Practice: 'PRACTICE',
   LocalMultiplayer: 'LOCAL_MULTIPLAYER',
+  FourPlayer: 'FOUR_PLAYER',
   Career: 'CAREER',
 } as const;
 export type GameMode = (typeof GameMode)[keyof typeof GameMode];

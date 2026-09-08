@@ -101,6 +101,10 @@ export class CameraManager {
   readonly #offset = new THREE.Vector3();
   /** Scratch for the eased target; avoids allocating every frame. */
   readonly #desired = new THREE.Vector3();
+  /** Cinematic look-at bias, added to `#target` when aiming the camera. */
+  readonly #targetOffset = new THREE.Vector3();
+  /** Scratch for the biased look-at point. */
+  readonly #lookAt = new THREE.Vector3();
   /** First framing snaps; later ones ease. */
   #settled = false;
 
@@ -155,9 +159,11 @@ export class CameraManager {
    * Called once per rendered frame with the real frame delta.
    */
   update(deltaSeconds: number): void {
+    this.#lookAt.copy(this.#target).add(this.#targetOffset);
+
     if (!this.#settled) {
       this.#camera.position.copy(this.#targetPosition).add(this.#offset);
-      this.#camera.lookAt(this.#target);
+      this.#camera.lookAt(this.#lookAt);
       this.#settled = true;
       return;
     }
@@ -165,12 +171,29 @@ export class CameraManager {
     const alpha = 1 - Math.exp(-CAMERA_SETTINGS.transitionRate * deltaSeconds);
     this.#desired.copy(this.#targetPosition).add(this.#offset);
     this.#camera.position.lerp(this.#desired, alpha);
-    this.#camera.lookAt(this.#target);
+    this.#camera.lookAt(this.#lookAt);
   }
 
-  /** Cinematic displacement, in world units. Cleared by passing zero. */
+  /** Unit vector from the camera toward the board centre. Used for push-in. */
+  get viewDirection(): THREE.Vector3 {
+    return this.#dir;
+  }
+
+  /** Cinematic displacement of the camera, in world units. Zero to clear. */
   setOffset(x: number, y: number, z: number): void {
     this.#offset.set(x, y, z);
+  }
+
+  /**
+   * Cinematic bias of the look-at point, in world units on the board plane.
+   *
+   * Separate from the position offset because "push toward the striker" and
+   * "look at the striker" are different moves, and a shot-follow needs both.
+   * Deliberately clamped by the caller rather than here — the cinematic layer
+   * knows how far it may stray; this only applies what it is given.
+   */
+  setTargetOffset(x: number, z: number): void {
+    this.#targetOffset.set(x, 0, z);
   }
 
   /**

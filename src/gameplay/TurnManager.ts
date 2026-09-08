@@ -14,7 +14,19 @@
 
 
 import type { EventBus } from '../core/EventBus';
-import { createMatchState, nextSeat, sideOf, type MatchState } from '../core/GameState';
+import {
+  assignTeams,
+  createMatchState,
+  nextSeat,
+  sideOf,
+  type MatchState,
+} from '../core/GameState';
+import {
+  FOUR_PLAYER_SEATING,
+  FOUR_PLAYER_TEAMS,
+  type FourPlayerRuleSet,
+} from './FourPlayerRuleSet';
+import { TurnOrderManager } from './TurnOrderManager';
 import { strikerHome, type PlayerSide } from '../core/PlayerSide';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import { PIECE_GEOMETRY } from '../physics/PhysicsConfig';
@@ -65,6 +77,8 @@ export class TurnManager {
   #match: MatchState = createMatchState();
   #mode: GameMode = GameMode.LocalMultiplayer;
   #seats: Array<{ slot: PlayerSlot; side: PlayerSide }> = [];
+  #turnOrder: TurnOrderManager | undefined;
+  #fourPlayerRules: FourPlayerRuleSet = FOUR_PLAYER_TEAMS;
   /** Did the striker touch anything this shot? Drives the no-contact foul. */
   #contactThisShot = false;
 
@@ -139,7 +153,16 @@ export class TurnManager {
   ): void {
     this.#seats = seats.map((seat) => ({ ...seat }));
     this.#mode = mode;
+    this.#turnOrder = new TurnOrderManager(this.#seats.map((seat) => seat.slot));
     this.reset();
+  }
+
+  get turnOrder(): TurnOrderManager | undefined {
+    return this.#turnOrder;
+  }
+
+  get fourPlayerRules(): FourPlayerRuleSet {
+    return this.#fourPlayerRules;
   }
 
   /** Reset for a new match. */
@@ -150,6 +173,14 @@ export class TurnManager {
       for (const seat of this.#seats) this.#match.players[seat.slot].side = seat.side;
       const first = this.#seats[0];
       if (first) this.#match.currentPlayer = first.slot;
+
+      // Partners share a colour and a win condition, so team state is built
+      // here and the rule engine reaches it through `effectiveColor`.
+      if (this.#mode === GameMode.FourPlayer) {
+        assignTeams(this.#match, FOUR_PLAYER_SEATING);
+      }
+      this.#turnOrder?.reset();
+      this.#turnOrder?.setCurrent(this.#match.currentPlayer);
     }
     this.#contactThisShot = false;
     if (this.#state === TurnState.GameComplete) this.#transition(TurnState.GameStart);

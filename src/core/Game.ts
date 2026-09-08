@@ -359,6 +359,14 @@ const SEAT_LAYOUTS: Record<GameMode, readonly SeatConfig[]> = {
   [GameMode.Practice]: [
     { slot: PlayerSlot.One, side: PlayerSide.Bottom, name: 'Practice', initials: 'PR', accent: SEAT_ACCENTS.bottom },
   ],
+  // Seating exactly as specified: P1 left, P2 top, P3 right, P4 bottom, so
+  // partners (P1+P3, P2+P4) sit opposite each other as at a real board.
+  [GameMode.FourPlayer]: [
+    { slot: PlayerSlot.One, side: PlayerSide.Left, name: 'Player 1', initials: 'P1', accent: SEAT_ACCENTS.left },
+    { slot: PlayerSlot.Two, side: PlayerSide.Top, name: 'Player 2', initials: 'P2', accent: SEAT_ACCENTS.top },
+    { slot: PlayerSlot.Three, side: PlayerSide.Right, name: 'Player 3', initials: 'P3', accent: SEAT_ACCENTS.right },
+    { slot: PlayerSlot.Four, side: PlayerSide.Bottom, name: 'Player 4', initials: 'P4', accent: SEAT_ACCENTS.bottom },
+  ],
   [GameMode.Career]: [
     { slot: PlayerSlot.One, side: PlayerSide.Bottom, name: 'You', initials: 'YO', accent: SEAT_ACCENTS.bottom },
     { slot: PlayerSlot.Two, side: PlayerSide.Top, name: 'Opponent', initials: 'OP', accent: SEAT_ACCENTS.top },
