@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Board -->
+  <rect width="32" height="32" rx="5" fill="#12100e"/>
+  <rect x="3" y="3" width="26" height="26" rx="3" fill="#b07a45"/>
+  <rect x="6" y="6" width="20" height="20" rx="1.5" fill="#e5c294"/>
+  <!-- Corner pockets -->
+  <g fill="#12100e">
+    <circle cx="7.5" cy="7.5" r="2"/>
+    <circle cx="24.5" cy="7.5" r="2"/>
+    <circle cx="7.5" cy="24.5" r="2"/>
+    <circle cx="24.5" cy="24.5" r="2"/>
+  </g>
+  <!-- Centre circle and queen -->
+  <circle cx="16" cy="16" r="5.5" fill="none" stroke="#8a5f34" stroke-width="0.8"/>
+  <circle cx="16" cy="16" r="2.4" fill="#c0392b"/>
+</svg>

@@ -1,37 +1,34 @@
 /**
  * Application entry point.
  *
- * Phase 1 boots the toolchain and proves the two engines are live: Three.js
- * imports cleanly, and Rapier's WebAssembly module compiles and initialises in
- * the browser. Rapier's async init is the one genuinely failure-prone step in
- * this stack, so it is verified before anything is built on top of it.
- *
- * Phase 2 replaces the boot report with the renderer, scene, camera, and
- * lighting.
+ * Initialises Rapier's WebAssembly module, constructs the `Game`, and starts
+ * the loop. Rapier's async init is the one genuinely failure-prone step in the
+ * stack, so it is awaited before anything is built on top of it — even though
+ * no physics runs yet.
  */
 
 import RAPIER from '@dimforge/rapier3d-compat';
 import { REVISION as THREE_REVISION } from 'three';
 
-import { BOARD_CONFIG, POCKET_POSITIONS } from './board/BoardConfig';
-import { EventBus } from './core/EventBus';
+import { Game } from './core/Game';
 import { GAME_CONFIG, IS_DEV } from './config/GameConfig';
-import { PHYSICS_CONFIG, PIECE_GEOMETRY } from './physics/PhysicsConfig';
+import { PHYSICS_CONFIG } from './physics/PhysicsConfig';
 
-const statusEl = document.getElementById('boot-status');
 const bootEl = document.getElementById('boot');
+const statusEl = document.getElementById('boot-status');
 
-/** Update the boot overlay. Safe to call before the DOM query resolved. */
 function setStatus(message: string): void {
   if (statusEl) statusEl.textContent = message;
 }
 
-/** Replace the spinner with a readable failure instead of a blank screen. */
+/** Show a readable failure instead of a blank screen. */
 function reportFailure(error: unknown): void {
   const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   console.error('[Carrom Arena 3D] startup failed:', error);
 
   if (!bootEl) return;
+  bootEl.hidden = false;
+  bootEl.classList.remove('is-hidden');
   bootEl.querySelector('.boot__ring')?.remove();
   setStatus('Failed to start.');
 
@@ -42,24 +39,27 @@ function reportFailure(error: unknown): void {
 }
 
 async function bootstrap(): Promise<void> {
-  setStatus('Initialising physics engine…');
+  const container = document.getElementById('app');
+  if (!container) throw new Error('Missing #app container');
 
-  // Rapier ships as WebAssembly and must finish compiling before any of its
-  // constructors exist. Everything downstream depends on this resolving.
+  setStatus('Initialising physics engine…');
+  // Rapier ships as WebAssembly; none of its constructors exist until this
+  // resolves.
   await RAPIER.init();
 
-  setStatus('Verifying engines…');
+  setStatus('Building scene…');
+  const game = new Game({ container });
 
-  // A throwaway world confirms the WASM module is genuinely usable, not merely
-  // loaded. Disposed immediately — PhysicsWorld owns the real one in Phase 4.
-  const probe = new RAPIER.World({ x: 0, y: PHYSICS_CONFIG.GRAVITY_Y, z: 0 });
-  probe.timestep = PHYSICS_CONFIG.FIXED_TIME_STEP;
-  probe.step();
-  probe.free();
+  game.events.once('game:ready', () => {
+    // Fade out, then take the overlay out of the layout entirely so it can
+    // never intercept a striker drag.
+    bootEl?.classList.add('is-hidden');
+    window.setTimeout(() => {
+      if (bootEl) bootEl.hidden = true;
+    }, 450);
+  });
 
-  // The bus is the spine every later system plugs into; construct it now so
-  // Phase 2 wires the renderer to an existing instance rather than inventing one.
-  const events = new EventBus();
+  game.start();
 
   if (IS_DEV) {
     console.info(
@@ -69,22 +69,14 @@ async function bootstrap(): Promise<void> {
     console.table({
       'Three.js': `r${THREE_REVISION}`,
       Rapier: RAPIER.version(),
-      'Board size (world units)': BOARD_CONFIG.surface.size.toFixed(2),
-      'Coin radius': PIECE_GEOMETRY.coin.radius.toFixed(3),
-      'Striker radius': PIECE_GEOMETRY.striker.radius.toFixed(3),
-      Pockets: POCKET_POSITIONS.length,
       'Fixed step': `${GAME_CONFIG.simulation.fixedTimeStepMs.toFixed(2)} ms`,
+      Gravity: PHYSICS_CONFIG.GRAVITY_Y,
+      Quality: game.renderer.quality,
     });
+
+    // Expose for console poking during development only.
+    Reflect.set(globalThis, 'game', game);
   }
-
-  // The overlay stays up: until Phase 2 draws a scene there is nothing behind
-  // it, and this line is the only visible proof the toolchain works end to end.
-  events.once('game:ready', () => {
-    bootEl?.querySelector('.boot__ring')?.remove();
-    setStatus(`Phase 1 ready — Three.js r${THREE_REVISION}, Rapier ${RAPIER.version()}`);
-  });
-
-  events.emit('game:ready');
 }
 
 void bootstrap().catch(reportFailure);
