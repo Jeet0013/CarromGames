@@ -14,6 +14,8 @@ import { InputManager } from '../input/InputManager';
 import { TurnManager } from '../gameplay/TurnManager';
 import { PocketManager } from '../gameplay/PocketManager';
 import { Notifications } from '../ui/Notifications';
+import { AudioManager } from '../audio/AudioManager';
+import { SoundToggle } from '../ui/SoundToggle';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
@@ -48,6 +50,8 @@ export class Game {
   readonly #pockets: PocketManager;
   readonly #input: InputManager;
   readonly #notifications: Notifications;
+  readonly #audio: AudioManager;
+  readonly #soundToggle: SoundToggle;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
 
@@ -92,6 +96,10 @@ export class Game {
       this.#pieces,
       this.#pockets,
     );
+
+    // Audio subscribes to physics and pocket events; it never calls into rules.
+    this.#audio = new AudioManager(this.events);
+    this.#soundToggle = new SoundToggle(container, this.#audio);
 
     this.#notifications = new Notifications(container);
     this.events.on('ui:notify', ({ message, tone }) =>
@@ -161,6 +169,10 @@ export class Game {
 
   get pockets(): PocketManager {
     return this.#pockets;
+  }
+
+  get audio(): AudioManager {
+    return this.#audio;
   }
 
   get input(): InputManager {
@@ -281,6 +293,8 @@ export class Game {
     this.#cameraTuner = undefined;
 
     window.removeEventListener('keydown', this.#onDebugKey);
+    this.#soundToggle.dispose();
+    this.#audio.dispose();
     this.#notifications.dispose();
     this.#input.dispose();
     this.#pieces.dispose();
