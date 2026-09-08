@@ -42,6 +42,17 @@ export interface GameEvents {
   /** Every body has come to rest; the shot can now be evaluated. */
   'shot:settled': { readonly by: PlayerSlot };
 
+  /**
+   * Two pieces met, or a piece hit a rail. `impact` is the planar speed at
+   * contact, so audio can scale the hit rather than playing one flat click.
+   */
+  'physics:contact': {
+    readonly kind: 'piece' | 'rail';
+    readonly impact: number;
+    readonly a?: string;
+    readonly b?: string;
+  };
+
   /** A piece dropped into a pocket. */
   'pocket:scored': {
     readonly pieceId: string;

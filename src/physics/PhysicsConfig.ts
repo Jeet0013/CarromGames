@@ -43,12 +43,27 @@ export const PHYSICS_CONFIG = {
   FIXED_TIME_STEP: 1 / 60,
 
   // ── Friction ────────────────────────────────────────────────────────────
-  /** Board surface. The dominant term: it sets how far a coin travels. */
+  /**
+   * Coefficient of kinetic friction between a piece and the board.
+   *
+   * This is applied by hand each step as a constant deceleration `μ·g`
+   * opposing motion, not as a Rapier contact friction. Pieces are constrained
+   * to the play plane and therefore never touch a floor collider, so there is
+   * no contact for the engine to apply surface friction at.
+   *
+   * It is also the more correct model. Coulomb friction decelerates a sliding
+   * coin linearly and brings it to rest in finite time; exponential damping —
+   * the usual shortcut — only ever approaches zero asymptotically, so coins
+   * creep forever and rest detection degenerates into an arbitrary cutoff.
+   */
   BOARD_FRICTION: 0.14,
+  /** Contact friction between two pieces, used by the solver. */
   COIN_FRICTION: 0.12,
   STRIKER_FRICTION: 0.1,
   /** Frame rails. Low, so rebounds keep their pace. */
   WALL_FRICTION: 0.08,
+  /** Angular equivalent of `BOARD_FRICTION`; bleeds spin off a sliding coin. */
+  SPIN_FRICTION: 2.2,
 
   // ── Restitution (bounciness) ────────────────────────────────────────────
   /** Coin-on-coin: a crisp click with real energy transfer. */
@@ -59,13 +74,12 @@ export const PHYSICS_CONFIG = {
 
   // ── Damping ─────────────────────────────────────────────────────────────
   /**
-   * Linear damping stands in for the surface drag that friction alone
-   * under-models on a powdered board, and is what makes coins glide to a stop
-   * rather than skate forever.
+   * Small velocity-proportional drag on top of Coulomb friction, standing in
+   * for air resistance and the powder on a real board. Deliberately low —
+   * `BOARD_FRICTION` does the real work of stopping a coin.
    */
-  LINEAR_DAMPING: 0.55,
-  /** Kept high — a spinning coin should settle quickly, as it does in reality. */
-  ANGULAR_DAMPING: 1.4,
+  LINEAR_DAMPING: 0.12,
+  ANGULAR_DAMPING: 0.4,
 
   // ── Mass ────────────────────────────────────────────────────────────────
   COIN_MASS: PIECE_SPECS_CM.coin.grams / 1000,
@@ -91,11 +105,31 @@ export const PHYSICS_CONFIG = {
    */
   MAX_SETTLE_SECONDS: 12,
 
+  // ── Velocity limits ─────────────────────────────────────────────────────
+  /**
+   * Hard speed ceiling, enforced after impulses and after every step.
+   *
+   * Primarily an anti-tunnelling measure: at 60 Hz a body moving faster than
+   * `railThickness / dt` can pass through a rail between steps. The rails are
+   * 0.65 units thick, so tunnelling needs ~39 u/s; 22 leaves a wide margin
+   * while still allowing a shot to cross the 7.4-unit board and rebound.
+   */
+  MAX_VELOCITY: 22,
+
   // ── Strike force ────────────────────────────────────────────────────────
-  /** Impulse applied at power = 0. Enough to move a coin, never to score. */
-  MIN_STRIKE_FORCE: 0.06,
+  /**
+   * Impulse bounds, in kg·units/s. Divided by the striker's 0.015 kg mass
+   * these give roughly 3 u/s at minimum power and 18 u/s at full.
+   *
+   * Sanity check against the friction model: at μ = 0.14 a piece decelerates
+   * at μ·g ≈ 13.7 u/s², so a full-power shot travels v²/2a ≈ 11.8 units before
+   * stopping — about 1.6 crossings of the 7.4-unit board, which is what a hard
+   * Carrom shot does. The earlier untested value of 0.85 would have produced
+   * 57 u/s: straight through a rail on the first frame.
+   */
+  MIN_STRIKE_FORCE: 0.045,
   /** Impulse at power = 1. Clamped — a shot can never exceed this. */
-  MAX_STRIKE_FORCE: 0.85,
+  MAX_STRIKE_FORCE: 0.27,
   /**
    * Drag distance in world units that maps to full power. Beyond it the power
    * meter is pinned, so a long drag off-screen is not an accidental max shot.

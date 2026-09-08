@@ -7,6 +7,9 @@
  */
 
 import { CarromBoard } from '../board/CarromBoard';
+import { PhysicsDebugRenderer } from '../physics/PhysicsDebugRenderer';
+import { PhysicsWorld } from '../physics/PhysicsWorld';
+import { PieceFactory } from '../pieces/PieceFactory';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
@@ -34,6 +37,11 @@ export class Game {
   readonly #lighting: Lighting;
   readonly #loop: GameLoop;
   readonly #board: CarromBoard;
+  readonly #physics: PhysicsWorld;
+
+  readonly #pieces: PieceFactory;
+
+  #physicsDebug: PhysicsDebugRenderer | undefined;
 
   #resizeObserver: ResizeObserver | undefined;
   #cameraTuner: DebugCameraTuner | undefined;
@@ -59,6 +67,20 @@ export class Game {
     // rebuilds it, which is why it goes through `add` rather than `addPermanent`.
     this.#board = new CarromBoard(quality);
     this.#scene.add(this.#board.group);
+
+    // Physics owns the rails as static colliders, built from the same
+    // BoardConfig the visual rails came from.
+    this.#physics = new PhysicsWorld(this.events);
+
+    // 9 white + 9 black + Queen + striker, in the standard opening arrangement.
+    this.#pieces = new PieceFactory(this.#physics);
+    this.#scene.add(this.#pieces.group);
+
+    if (IS_DEV) {
+      this.#physicsDebug = new PhysicsDebugRenderer(this.#physics);
+      this.#scene.addPermanent(this.#physicsDebug.object);
+      window.addEventListener('keydown', this.#onDebugKey);
+    }
 
     // Constructed inside the DEV guard so the class is tree-shaken out of
     // production builds entirely, not merely left inert.
@@ -88,6 +110,19 @@ export class Game {
 
   get board(): CarromBoard {
     return this.#board;
+  }
+
+  get physics(): PhysicsWorld {
+    return this.#physics;
+  }
+
+  get pieces(): PieceFactory {
+    return this.#pieces;
+  }
+
+  /** Return every piece to its opening position. */
+  resetBoard(): void {
+    this.#pieces.resetBoard();
   }
 
   get loop(): GameLoop {
@@ -120,14 +155,27 @@ export class Game {
     this.#lighting.setQuality(quality);
   }
 
-  /** Advance simulation. Physics and the turn machine hook in here later. */
-  #fixedUpdate(_delta: number): void {
-    // No simulation yet — the board is static until physics lands.
+  #fixedUpdate(delta: number): void {
+    this.#physics.step(delta);
   }
 
   #render(_alpha: number): void {
+    // Positions are copied from the simulation once per frame rather than once
+    // per fixed step: several steps can run in one frame, and only the last
+    // one is ever seen.
+    this.#pieces.sync();
+    this.#physicsDebug?.update();
     this.#renderer.render(this.#scene.scene, this.#camera.camera);
   }
+
+  /** Dev overlays. `C` toggles colliders, `R` resets the board. */
+  readonly #onDebugKey = (event: KeyboardEvent): void => {
+    if (event.key === 'c' || event.key === 'C') {
+      const visible = this.#physicsDebug?.toggle() ?? false;
+      console.info(`[Debug] colliders ${visible ? 'on' : 'off'}`);
+    }
+    if (event.key === 'r' || event.key === 'R') this.resetBoard();
+  };
 
   /**
    * Track the container's size.
@@ -176,6 +224,10 @@ export class Game {
     this.#cameraTuner?.dispose();
     this.#cameraTuner = undefined;
 
+    window.removeEventListener('keydown', this.#onDebugKey);
+    this.#pieces.dispose();
+    this.#physicsDebug?.dispose();
+    this.#physics.dispose();
     this.#board.dispose();
     this.#lighting.dispose();
     this.#scene.dispose();

@@ -17,9 +17,9 @@ giving 14 phases. Content is unchanged — only the grouping.
 | --- | --- | --- | --- |
 | 1 | Project setup + scene foundation | ✅ Done | Toolchain, skeleton, configs, renderer, camera, lighting, loop |
 | 2 | Carrom board | ✅ Done | Surface, rails, pockets, markings, materials |
-| 3 | Physics | ⬜ Next | Rapier world, `PHYSICS_CONFIG`, rest detection |
-| 4 | Coins and striker | ⬜ Not started | Meshes + bodies, `PieceFactory` |
-| 5 | Input and shooting | ⬜ Not started | Positioning, aiming, power, release |
+| 3 | Physics | ✅ Done | Rapier world, `PHYSICS_CONFIG`, rest detection |
+| 4 | Coins and striker | ✅ Done | Meshes + bodies, `PieceFactory` |
+| 5 | Input and shooting | 🟨 In progress | Positioning, aiming, power, release |
 | 6 | Pocket detection | ⬜ Not started | Corner sensors, removal, events |
 | 7 | Game rules | ⬜ Not started | `RuleEngine`, `TurnManager`, fouls |
 | 8 | Queen logic | ⬜ Not started | Cover, return-to-center, UI signal |
@@ -115,3 +115,5 @@ limitations, recommended next phase.
 
 - Phase 1 — [`reports/phase-01.md`](./reports/phase-01.md)
 - Phase 2 — [`reports/phase-02.md`](./reports/phase-02.md)
+- Phase 3 — [`reports/phase-03.md`](./reports/phase-03.md)
+- Phase 4 — [`reports/phase-04.md`](./reports/phase-04.md)

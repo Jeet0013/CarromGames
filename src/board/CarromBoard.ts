@@ -77,10 +77,10 @@ export class CarromBoard {
       curveSegments: 24,
     });
 
-    // Lay the slab flat and put its top face at exactly y = 0, which is the
-    // plane every piece will slide on.
+    // Lay the slab flat and put its top face at exactly y = 0, the plane every
+    // piece slides on.
     geometry.rotateX(-Math.PI / 2);
-    geometry.translate(0, 0, 0);
+    alignTop(geometry, 0);
     geometry.computeVertexNormals();
     applyPlanarUVs(geometry, half);
 
@@ -147,9 +147,9 @@ export class CarromBoard {
     });
 
     geometry.rotateX(-Math.PI / 2);
-    // Drop the frame so its underside is flush with the surface slab's
-    // underside; the rail then rises above the playing plane.
-    geometry.translate(0, -BOARD_CONFIG.surface.thickness, 0);
+    // Sit the frame's underside flush with the surface slab's underside, so the
+    // rail rises above the playing plane by the remainder of its height.
+    alignBottom(geometry, -BOARD_CONFIG.surface.thickness);
     geometry.computeVertexNormals();
     // Project the grain across the frame's own footprint. Extrusion UVs are in
     // shape units and would smear the texture down the bevelled faces.
@@ -244,6 +244,30 @@ export class CarromBoard {
     for (const resource of this.#disposables) resource.dispose();
     this.#disposables.length = 0;
   }
+}
+
+/**
+ * Shift a geometry so its highest point sits at `y`.
+ *
+ * `ExtrudeGeometry` does not place its output where the caller assumes:
+ * extruding by `depth` spans 0…depth, and enabling a bevel extends past both
+ * ends. Hard-coding an offset therefore silently misplaces the mesh — which is
+ * exactly what happened here, leaving the play surface 0.12 units too high and
+ * the coins buried inside it. Measuring the result removes the guesswork.
+ */
+function alignTop(geometry: THREE.BufferGeometry, y: number): void {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  if (!box) return;
+  geometry.translate(0, y - box.max.y, 0);
+}
+
+/** Shift a geometry so its lowest point sits at `y`. */
+function alignBottom(geometry: THREE.BufferGeometry, y: number): void {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  if (!box) return;
+  geometry.translate(0, y - box.min.y, 0);
 }
 
 /**
