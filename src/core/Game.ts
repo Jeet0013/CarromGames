@@ -21,6 +21,7 @@ import { AudioManager } from '../audio/AudioManager';
 import { SoundToggle } from '../ui/SoundToggle';
 import { GameHUD, SEAT_ACCENTS, type SeatConfig } from '../ui/GameHUD';
 import { MainMenu } from '../ui/MainMenu';
+import { SplashScreen } from '../ui/SplashScreen';
 import { Tutorial } from '../ui/Tutorial';
 import { HelpButton } from '../ui/HelpButton';
 import { ExitButton } from '../ui/ExitButton';
@@ -75,6 +76,7 @@ export class Game {
   readonly #soundToggle: SoundToggle;
   readonly #hud: GameHUD;
   readonly #menu: MainMenu;
+  readonly #splash: SplashScreen;
   readonly #tutorial: Tutorial;
   readonly #helpButton: HelpButton;
   readonly #exitButton: ExitButton;
@@ -174,6 +176,12 @@ export class Game {
       () => this.#startMode(this.#lastMode),
       () => this.showMenu(),
     );
+    this.#splash = new SplashScreen(container, () => {
+      // The tap has already unlocked audio via the capture-phase listeners, so
+      // the theme is running by the time the menu appears.
+      this.#audio.startMenuMusic();
+      this.showMenu();
+    });
     this.#menu = new MainMenu(container, (mode) => this.#startMode(mode));
     this.#tutorial = new Tutorial(container, () => {
       this.#save.update({ hasSeenTutorial: true });
@@ -626,7 +634,8 @@ export class Game {
     // The loop runs from the outset so the board is live behind the menu —
     // the menu sits on the table rather than replacing it.
     this.#loop.start();
-    this.showMenu();
+    this.#setChromeVisible(false);
+    this.#splash.show();
     this.events.emit('game:ready');
   }
 
@@ -790,6 +799,7 @@ export class Game {
     this.#exitButton.dispose();
     this.#helpButton.dispose();
     this.#tutorial.dispose();
+    this.#splash.dispose();
     this.#menu.dispose();
     this.#hud.dispose();
     this.#soundToggle.dispose();
