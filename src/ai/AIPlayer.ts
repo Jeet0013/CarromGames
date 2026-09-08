@@ -30,12 +30,13 @@ import { AIDifficulty } from './AIDifficulty';
 import { AIShotExecutor } from './AIShotExecutor';
 import { AIShotPlanner } from './AIShotPlanner';
 import { AIShotScorer } from './AIShotScorer';
+import { AIShotSimulator, type SimPiece } from './AIShotSimulator';
 import { AITargetAnalyzer } from './AITargetAnalyzer';
 import { AIQueenStrategy } from './AIQueenStrategy';
 import { AIThinkingState } from './AIThinkingState';
 import type { AIShotCandidate } from './AIShotCandidate';
 import { IS_DEV } from '../config/GameConfig';
-import { TurnState, type BoardPoint, type PlayerSlot } from '../core/types';
+import { TurnState, type BoardPoint, type CoinColor, type PlayerSlot } from '../core/types';
 
 /** How long the aim guides are shown before the shot, in seconds. */
 const AIM_DISPLAY_SECONDS = 0.45;
@@ -47,6 +48,7 @@ export class AIPlayer {
   readonly #pieces: PieceFactory;
   readonly #turns: TurnManager;
   readonly #executor: AIShotExecutor;
+  readonly #simulator = new AIShotSimulator();
 
   #slot: PlayerSlot | null = null;
   #difficulty: AIDifficulty = AIDifficulty.Normal;
@@ -95,6 +97,10 @@ export class AIPlayer {
     this.#difficulty = difficulty;
     this.#config = AI_CONFIGS[difficulty];
     this.reset();
+  }
+
+  dispose(): void {
+    this.#simulator.dispose();
   }
 
   reset(): void {
@@ -194,6 +200,12 @@ export class AIPlayer {
     }
 
     this.#state = AIThinkingState.SelectingShot;
+
+    // Strong tiers play their best options out and keep what actually works.
+    if (this.#config.simulatedCandidates > 0 && candidates.length > 0) {
+      candidates = this.#rankBySimulation(candidates, snapshot.ownColor);
+    }
+
     this.#candidate = AIShotScorer.choose(candidates, this.#config);
 
     if (!this.#candidate) {
@@ -219,6 +231,59 @@ export class AIPlayer {
     this.#origin = this.#executor.place(this.#candidate, this.#turns.currentSide);
     this.#timer = PLACEMENT_SECONDS;
   }
+
+  /**
+   * Play the top candidates out and re-rank them by what happened.
+   *
+   * Geometry cannot see that a coin will clip another on the way, or that the
+   * striker will follow it in. Simulation can. Outcomes are folded back into
+   * the existing score rather than replacing it, so a shot that pots but
+   * scratches is still rejected, and the ordering among equally successful
+   * shots keeps the geometric preference for clean, controlled play.
+   */
+  #rankBySimulation(
+    candidates: AIShotCandidate[],
+    ownColor: CoinColor | null,
+  ): AIShotCandidate[] {
+    const board: SimPiece[] = this.#pieces.pieces
+      .filter((piece) => piece.active)
+      .map((piece) => ({
+        id: piece.id,
+        kind: piece.kind,
+        color: piece.color,
+        position: piece.position,
+      }));
+
+    const sorted = [...candidates].sort((a, b) => b.finalScore - a.finalScore);
+    const budget = Math.min(this.#config.simulatedCandidates, sorted.length);
+
+    for (let i = 0; i < budget; i += 1) {
+      const candidate = sorted[i];
+      if (!candidate) continue;
+
+      const result = this.#simulator.simulate(
+        board,
+        {
+          origin: candidate.strikerPosition,
+          direction: candidate.requiredAimDirection,
+          power: candidate.estimatedShotForce,
+        },
+        ownColor,
+      );
+
+      // Weighted by consequence, not merely by success: a scratch loses the
+      // turn and hands back a coin, which costs more than a missed pot.
+      candidate.finalScore +=
+        result.ownPocketed * 2.2 +
+        (result.queenPocketed ? 1.1 : 0) -
+        result.opponentPocketed * 1.4 -
+        (result.strikerPocketed ? 2.8 : 0) -
+        (result.madeContact ? 0 : 1.6);
+    }
+
+    return sorted.sort((a, b) => b.finalScore - a.finalScore);
+  }
+
 
   /**
    * Show the aim guides briefly, so the shot is legible.

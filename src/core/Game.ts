@@ -177,6 +177,15 @@ export class Game {
     this.#menu = new MainMenu(container, (mode) => this.#startMode(mode));
     this.#tutorial = new Tutorial(container, () => {
       this.#save.update({ hasSeenTutorial: true });
+      /*
+       * The theme runs until the player actually starts playing.
+       *
+       * Stopping it the moment a mode is chosen cut it off while the player was
+       * still reading the rules — which is still pre-game, and silence there
+       * feels like something broke. Dismissing the tutorial is the real
+       * boundary: that is when the board becomes theirs.
+       */
+      this.#audio.stopMenuMusic();
     });
     this.#helpButton = new HelpButton(container, () => this.#tutorial.show());
     this.#exitButton = new ExitButton(container, () => {
@@ -450,7 +459,6 @@ export class Game {
       if (status === 'connected') {
         this.#lobby.hide();
         this.#setChromeVisible(true);
-        this.#audio.stopMenuMusic();
     // The theme belongs to the menus; play is quiet apart from the board.
     this.#audio.stopMenuMusic();
         this.setMode(GameMode.Online);
@@ -520,7 +528,6 @@ export class Game {
   #startVsComputer(difficulty: AIDifficulty): void {
     this.#difficultySelect.hide();
     this.#setChromeVisible(true);
-    this.#audio.stopMenuMusic();
     // The theme belongs to the menus; play is quiet apart from the board.
     this.#audio.stopMenuMusic();
     this.setMode(GameMode.QuickMatch);
@@ -529,6 +536,7 @@ export class Game {
     this.#save.update({ settings: { ...this.#save.data.settings } });
     this.#turns.start();
     this.#tutorial.show();
+    if (!this.#tutorial.visible) this.#audio.stopMenuMusic();
   }
 
   /** Return to mode selection. Panels are cleared so none linger. */
@@ -552,8 +560,6 @@ export class Game {
       return;
     }
     this.#setChromeVisible(true);
-    // The theme belongs to the menus; play is quiet apart from the board.
-    this.#audio.stopMenuMusic();
     // Leaving an online game must actually drop the connection, or the peer
     // keeps sending shots into a match that no longer exists.
     if (this.#net.isOnline) {
@@ -578,6 +584,7 @@ export class Game {
     // win condition as well as the controls, and one tap dismisses it — the
     // board is already waiting underneath.
     this.#tutorial.show();
+    if (!this.#tutorial.visible) this.#audio.stopMenuMusic();
   }
 
   get input(): InputManager {

@@ -16,12 +16,18 @@ const DECELERATION = PHYSICS_CONFIG.BOARD_FRICTION * Math.abs(PHYSICS_CONFIG.GRA
 /**
  * Fraction of the striker's speed transferred along the line of centres.
  *
- * For a near-elastic collision between masses m₁ and m₂ the struck body leaves
- * at `2·m₁/(m₁+m₂)` times the approach speed. With a 15 g striker and a 5.5 g
- * coin that is ≈1.46 — the reason a striker drives coins so effectively.
+ * The general result is `(1+e)·m₁/(m₁+m₂)`, where `e` is the coefficient of
+ * restitution. The first version used `2·m₁/(m₁+m₂)` — which is the *perfectly
+ * elastic* case, e = 1. Coins are not perfectly elastic: at the configured
+ * restitution of 0.55 the true factor is ≈1.13, not ≈1.46.
+ *
+ * Overstating transfer by ~29% meant every shot was planned with too little
+ * force. Isolated testing showed it plainly: the ghost-ball aim was landing
+ * correctly and coins were still stopping short of the pocket, or in the worst
+ * cases not being reached at all.
  */
 const TRANSFER =
-  (2 * PHYSICS_CONFIG.STRIKER_MASS) /
+  ((1 + PHYSICS_CONFIG.COIN_RESTITUTION) * PHYSICS_CONFIG.STRIKER_MASS) /
   (PHYSICS_CONFIG.STRIKER_MASS + PHYSICS_CONFIG.COIN_MASS);
 
 export class AIPowerCalculator {
@@ -51,8 +57,13 @@ export class AIPowerCalculator {
     coinToPocket: number,
     cutAngle: number,
   ): number {
-    // Overshoot the pocket by a coin's width so the coin drops rather than rests.
-    const coinSpeed = this.speedForDistance(coinToPocket + PIECE_GEOMETRY.coin.radius * 3);
+    /*
+     * Overshoot the pocket generously so the coin drops rather than resting on
+     * the lip. Six radii rather than three: energy is also lost to the coin's
+     * own spin and to grazing contacts the plan cannot foresee, and being a
+     * little heavy costs position while being light costs the shot outright.
+     */
+    const coinSpeed = this.speedForDistance(coinToPocket + PIECE_GEOMETRY.coin.radius * 6);
 
     // A thin cut transfers less; cos falls away, so the required speed rises.
     // Clamped because at 90° the required speed is infinite and the shot is

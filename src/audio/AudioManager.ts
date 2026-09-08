@@ -309,11 +309,20 @@ export class AudioManager {
     const left = buffer.getChannelData(0);
     const right = buffer.getChannelData(1);
 
-    /** Write a sample into both channels with a stereo bias. */
+    /**
+     * Write a sample into both channels, wrapping past the end.
+     *
+     * The wrap is what makes the loop continuous. Notes near the end of the
+     * last bar ring on past the buffer boundary, and truncating them left the
+     * final beat almost silent — measured at 0.021 average against 0.301 just
+     * after the loop point, a fourteenfold jump that reads as the music
+     * stopping and restarting. Folding those tails back to the top is exactly
+     * what would happen if the loop were simply played twice.
+     */
     const add = (index: number, value: number, pan = 0.5): void => {
-      if (index < 0 || index >= length) return;
-      left[index] = (left[index] ?? 0) + value * pan;
-      right[index] = (right[index] ?? 0) + value * (1 - pan);
+      const i = ((index % length) + length) % length;
+      left[i] = (left[i] ?? 0) + value * pan;
+      right[i] = (right[i] ?? 0) + value * (1 - pan);
     };
 
     /** A struck, decaying tone with a little harmonic bite. */
@@ -429,7 +438,14 @@ export class AudioManager {
     return buffer;
   }
 
-  /** Start the menu theme. Idempotent. */
+  /**
+   * Start the menu theme. Idempotent, and safe to call before audio unlocks.
+   *
+   * Before the first gesture the browser refuses to start audio at all, so this
+   * only records the intent; `#unlock` starts it for real. That matters more
+   * than it sounds: the first gesture a player makes is almost always the menu
+   * card itself, so without the deferred start the theme would never be heard.
+   */
   startMenuMusic(): void {
     this.#menuWanted = true;
     const context = this.#context;
@@ -442,7 +458,7 @@ export class AudioManager {
     const gain = context.createGain();
     // Fade in: music that arrives at full level reads as a jingle, not a theme.
     gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.62, context.currentTime + 0.9);
+    gain.gain.exponentialRampToValueAtTime(0.95, context.currentTime + 0.9);
     gain.connect(this.#master);
 
     const source = context.createBufferSource();
