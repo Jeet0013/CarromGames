@@ -58,7 +58,7 @@ export const CAMERA_SETTINGS = {
    * per-frame factor converges more than twice as fast on a high-refresh
    * display, and the camera would feel different on every device.
    */
-  transitionRate: 7.5,
+  transitionRate: 4.0,
   /** Rotation around the board. 0 puts the camera on Player One's side (+Z). */
   azimuthDegrees: 0,
   /** Breathing room around the board edge, as a fraction of the fitted distance. */

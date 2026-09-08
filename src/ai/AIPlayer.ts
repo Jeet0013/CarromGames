@@ -79,6 +79,11 @@ export class AIPlayer {
     return this.#difficulty;
   }
 
+  /** Whether a given seat is computer-controlled. */
+  controls(slot: PlayerSlot): boolean {
+    return this.#slot !== null && this.#slot === slot;
+  }
+
   /** True while the AI owns the turn — used to lock human input. */
   get isActing(): boolean {
     return this.#slot !== null && this.#turns.currentPlayer === this.#slot;

@@ -32,7 +32,7 @@ import type { PieceFactory } from '../pieces/PieceFactory';
 import { CameraShake } from './CameraEffects';
 import { BOARD_CONFIG, POCKET_POSITIONS } from '../board/BoardConfig';
 import { PHYSICS_CONFIG } from '../physics/PhysicsConfig';
-import type { BoardPoint } from '../core/types';
+import type { BoardPoint, PlayerSlot } from '../core/types';
 
 export const CinematicState = {
   Gameplay: 'GAMEPLAY',
@@ -46,12 +46,12 @@ export type CinematicState = (typeof CinematicState)[keyof typeof CinematicState
 
 export const CINEMATIC_SETTINGS = {
   /** Push-in duration when the shot is released. */
-  shotStartSeconds: 0.22,
+  shotStartSeconds: 0.42,
   /** Ceiling on the follow, so the camera is never away from framing for long. */
-  shotFollowSeconds: 0.9,
+  shotFollowSeconds: 1.15,
   /** How long a pocket holds the camera. */
-  pocketFollowSeconds: 0.5,
-  returnSeconds: 0.55,
+  pocketFollowSeconds: 0.75,
+  returnSeconds: 1.1,
 
   /**
    * How far the camera moves toward the board, in world units.
@@ -59,7 +59,7 @@ export const CINEMATIC_SETTINGS = {
    * Deliberately modest. The board must stay readable — this is a sense of
    * depth, not a zoom that hides the coins the player is about to be judged on.
    */
-  pushDistance: 2.6,
+  pushDistance: 2.3,
   /**
    * Ceiling on how far the look-at point may leave the board centre. Beyond
    * this the far rail starts leaving frame.
@@ -70,10 +70,22 @@ export const CINEMATIC_SETTINGS = {
   /** Seconds of velocity to lead by, so a fast striker is not chased. */
   leadSeconds: 0.09,
 
-  /** Easing rates, in e-foldings per second. */
-  pushRate: 6.5,
-  followRate: 5.0,
-  returnRate: 3.2,
+  /**
+   * Easing rates, in e-foldings per second.
+   *
+   * These are the whole feel of the shot camera. A rate of `r` covers ~63% of
+   * the remaining distance each second, so 6.5 lands almost instantly and reads
+   * as a snap rather than a move — which is what the first pass did. Halving
+   * them stretches each transition over roughly half a second of visible
+   * travel, which is what makes it feel like a camera rather than a cut.
+   *
+   * The return is slowest deliberately: pushing in is a reaction to something
+   * happening, but pulling back is the game settling down, and hurrying it
+   * makes the board appear to snap away from the player.
+   */
+  pushRate: 3.0,
+  followRate: 2.6,
+  returnRate: 1.7,
 } as const;
 
 export class CinematicCameraManager {
@@ -94,6 +106,18 @@ export class CinematicCameraManager {
   #pocketFocus: BoardPoint | null = null;
   #settled = true;
 
+  /**
+   * Whether the shot in progress belongs to a human.
+   *
+   * The camera only performs for the player's own shots. During the computer's
+   * turn the board stays fully framed and still: the player is *watching* then,
+   * not acting, and a camera that dives at someone else's striker takes away
+   * the wide view they need to follow what happened to them.
+   */
+  #activeShotIsHuman = true;
+  /** Supplied by Game; defaults to treating every seat as human. */
+  #isHumanSeat: (slot: PlayerSlot) => boolean = () => true;
+
   constructor(events: EventBus, camera: CameraManager, pieces: PieceFactory) {
     this.#camera = camera;
     this.#pieces = pieces;
@@ -103,7 +127,7 @@ export class CinematicCameraManager {
       this.#enabled = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     }
 
-    events.on('shot:fired', () => this.#onShotFired());
+    events.on('shot:fired', ({ by }) => this.#onShotFired(by));
     events.on('shot:settled', () => this.#onSettled());
     events.on('physics:contact', ({ impact }) => this.#onContact(impact));
     events.on('pocket:scored', ({ pocketIndex }) => this.#onPocket(pocketIndex));
@@ -113,14 +137,28 @@ export class CinematicCameraManager {
     return this.#state;
   }
 
+  /** Tell the camera which seats are human-controlled. */
+  setHumanSeatTest(predicate: (slot: PlayerSlot) => boolean): void {
+    this.#isHumanSeat = predicate;
+  }
+
   setEnabled(enabled: boolean): void {
     this.#enabled = enabled;
     this.#shake.setEnabled(enabled);
     if (!enabled) this.#reset();
   }
 
-  #onShotFired(): void {
+  #onShotFired(by: PlayerSlot): void {
     if (!this.#enabled) return;
+
+    this.#activeShotIsHuman = this.#isHumanSeat(by);
+    if (!this.#activeShotIsHuman) {
+      // Hold the wide, stable framing for the computer's shot.
+      this.#settled = false;
+      this.#state = CinematicState.Gameplay;
+      return;
+    }
+
     this.#settled = false;
     this.#state = CinematicState.ShotStart;
     this.#timer = CINEMATIC_SETTINGS.shotStartSeconds;
@@ -135,20 +173,20 @@ export class CinematicCameraManager {
    * curve in `CameraShake` does the rest.
    */
   #onContact(impact: number): void {
-    if (!this.#enabled) return;
+    if (!this.#enabled || !this.#activeShotIsHuman) return;
     const strength = Math.min(1, impact / (PHYSICS_CONFIG.MAX_VELOCITY * 0.55));
     if (strength < 0.12) return;
     this.#shake.add(strength * 0.45);
 
     if (this.#state === CinematicState.ShotFollow) {
       this.#state = CinematicState.Impact;
-      this.#timer = 0.18;
+      this.#timer = 0.3;
     }
   }
 
   /** A pocket is the most interesting thing on the board — look at it. */
   #onPocket(pocketIndex: number): void {
-    if (!this.#enabled) return;
+    if (!this.#enabled || !this.#activeShotIsHuman) return;
     const pocket = POCKET_POSITIONS[pocketIndex];
     if (!pocket) return;
     this.#pocketFocus = pocket;

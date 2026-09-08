@@ -24,9 +24,11 @@ export interface ShakeSettings {
 }
 
 export const SHAKE_DEFAULTS: ShakeSettings = {
-  amplitude: 0.28,
-  decay: 2.6,
-  frequency: 22,
+  amplitude: 0.2,
+  // Slower decay and a lower sample rate: 22 Hz reads as a buzz, while a
+  // gentler wobble over a longer tail reads as weight.
+  decay: 1.9,
+  frequency: 13,
 };
 
 export class CameraShake {

@@ -198,6 +198,9 @@ export class Game {
       this.#input.aimSystem,
     );
     this.#input.setLock(() => this.#ai.isActing);
+    // The shot camera performs for the player only; the computer's turn keeps
+    // the stable wide framing.
+    this.#cinematic.setHumanSeatTest((slot) => !this.#ai.controls(slot));
 
     if (IS_DEV) {
       this.#physicsDebug = new PhysicsDebugRenderer(this.#physics);
