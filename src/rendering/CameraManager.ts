@@ -187,6 +187,17 @@ export class CameraManager {
     this.#camera.lookAt(this.#lookAt);
   }
 
+  /**
+   * Distance the framing solver wants the camera at.
+   *
+   * Exposed so the cinematic layer can express zoom as a *factor* — "4× closer"
+   * is meaningful at every aspect ratio, whereas a fixed number of world units
+   * would be a mild nudge on desktop and a face-plant on a phone.
+   */
+  get framedDistance(): number {
+    return this.#targetPosition.length();
+  }
+
   /** Unit vector from the camera toward the board centre. Used for push-in. */
   get viewDirection(): THREE.Vector3 {
     return this.#dir;
