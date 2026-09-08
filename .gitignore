@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+.vite/
+.DS_Store
+Thumbs.db
+
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tsbuildinfo

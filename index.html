@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#12100e" />
+    <meta name="description" content="Carrom Arena 3D — a premium 3D Carrom board game." />
+    <title>Carrom Arena 3D</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --felt: #12100e;
+        --wood: #b07a45;
+        --ink: #f4ece1;
+        --muted: #9a8d7d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--felt);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        /* Touch drags are the striker controls — never let them scroll the page. */
+        overscroll-behavior: none;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      #app {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Boot overlay. Removed by the app once the engine reports ready. */
+      #boot {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 1.25rem;
+        text-align: center;
+        padding: 2rem;
+        background: radial-gradient(circle at 50% 40%, #1d1913, var(--felt) 70%);
+        transition: opacity 0.4s ease;
+      }
+
+      #boot[hidden] {
+        display: none;
+      }
+
+      #boot.is-hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .boot__title {
+        margin: 0;
+        font-size: clamp(1.6rem, 5vw, 2.6rem);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        background: linear-gradient(180deg, #f7e7cf, var(--wood));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .boot__status {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--muted);
+        min-height: 1.2em;
+      }
+
+      .boot__ring {
+        width: 34px;
+        height: 34px;
+        border: 2px solid rgba(176, 122, 69, 0.25);
+        border-top-color: var(--wood);
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+
+      .boot__error {
+        max-width: 32rem;
+        font-size: 0.85rem;
+        line-height: 1.6;
+        color: #ff9d8a;
+        white-space: pre-wrap;
+        text-align: left;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .boot__ring {
+          animation-duration: 3s;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="boot">
+        <h1 class="boot__title">Carrom Arena 3D</h1>
+        <div class="boot__ring" aria-hidden="true"></div>
+        <p class="boot__status" id="boot-status" role="status">Starting…</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
