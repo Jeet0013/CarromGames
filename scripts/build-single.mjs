@@ -58,7 +58,20 @@ const source = await readFile('index.html', 'utf8');
 // The artifact host supplies <!doctype>, <html>, <head> and <body>, so only
 // the inner content is emitted here: title, styles, the mount point, and the
 // inlined bundle.
+//
+// The head metadata is carried over too, and that is not optional. When this
+// file is served raw — which is exactly what GitHub Pages does — the browser
+// builds its own <head>, and without a viewport meta iOS Safari falls back to a
+// 980px layout viewport and scales the whole page down to fit. Everything looks
+// correct but shrunken, and no amount of CSS fixes it. Emulators do not catch
+// this because they set the viewport directly and never consult the tag.
 const title = /<title>([\s\S]*?)<\/title>/.exec(source)?.[1] ?? 'Carrom Arena 3D';
+
+// Carried verbatim from index.html so the two builds cannot drift apart.
+const metas = [...source.matchAll(/<meta\s[^>]*>/g)]
+  .map((match) => match[0])
+  .filter((tag) => !tag.includes('charset'))
+  .join('\n');
 const style = /<style>([\s\S]*?)<\/style>/.exec(source)?.[1] ?? '';
 const body = /<div id="app">([\s\S]*?)<\/div>\s*<script/.exec(source)?.[1] ?? '';
 
@@ -76,7 +89,9 @@ try {
   // No favicon on disk; the page is still valid without one.
 }
 
-const html = `${favicon}<title>${title}</title>
+const html = `<meta charset="UTF-8">
+${metas}
+${favicon}<title>${title}</title>
 <style>
 /* The host resets body margin but not overflow; the board owns the viewport. */
 html, body { height: 100%; overflow: hidden; }
