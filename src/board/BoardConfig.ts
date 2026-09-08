@@ -90,6 +90,15 @@ export const BOARD_CONFIG = {
     outerSize: cm(BOARD_DIMENSIONS_CM.playingSurface + BOARD_DIMENSIONS_CM.frameWidth * 2),
     /** Softens the frame edge; purely visual. */
     edgeRadius: cm(0.8),
+    /**
+     * Radius of the board's outer corners in plan view.
+     *
+     * A real Carrom board's frame is rounded off at the corners — square
+     * corners on a piece of furniture this size look machined rather than
+     * made. 4 cm against a 6.5 cm rail is a generous curve that is clearly
+     * visible without eating the rail's width.
+     */
+    cornerRadius: cm(4),
   },
   pocket: {
     radius: POCKET_RADIUS,

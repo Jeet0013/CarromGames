@@ -109,7 +109,7 @@ export class CarromBoard {
    * catch the light where four separate boxes would butt together.
    */
   #buildFrame(quality: QualityTier): THREE.Mesh {
-    const { width, height, outerSize, edgeRadius } = BOARD_CONFIG.frame;
+    const { width, height, outerSize, edgeRadius, cornerRadius } = BOARD_CONFIG.frame;
     const half = BOARD_CONFIG.halfSurface;
     void width;
 
@@ -121,12 +121,10 @@ export class CarromBoard {
     const outerHalf = outerSize / 2 - bevelSize;
     const innerHalf = half + bevelSize;
 
+    // Rounded outer corners. The bevel already softens the frame's top and
+    // bottom edges, but in plan view the corners were still sharp right angles.
     const shape = new THREE.Shape();
-    shape.moveTo(-outerHalf, -outerHalf);
-    shape.lineTo(outerHalf, -outerHalf);
-    shape.lineTo(outerHalf, outerHalf);
-    shape.lineTo(-outerHalf, outerHalf);
-    shape.closePath();
+    traceRoundedRect(shape, outerHalf, Math.max(0, cornerRadius - bevelSize));
 
     const hole = new THREE.Path();
     hole.moveTo(-innerHalf, -innerHalf);
@@ -143,7 +141,9 @@ export class CarromBoard {
       bevelSize,
       bevelOffset: 0,
       bevelSegments: 3,
-      curveSegments: 8,
+      // Raised from 8: the corner arcs are the widest curves on the board and
+      // faceting shows immediately at this scale.
+      curveSegments: 14,
     });
 
     geometry.rotateX(-Math.PI / 2);
@@ -244,6 +244,36 @@ export class CarromBoard {
     for (const resource of this.#disposables) resource.dispose();
     this.#disposables.length = 0;
   }
+}
+
+/**
+ * Trace a rounded rectangle into a shape or path.
+ *
+ * Quadratic curves with the true corner as the control point: the result is
+ * visually indistinguishable from a circular fillet at this radius, and it
+ * keeps the outline a single continuous curve for the extruder to bevel.
+ */
+function traceRoundedRect(shape: THREE.Shape, half: number, radius: number): void {
+  const r = Math.min(radius, half);
+  if (r <= 0) {
+    shape.moveTo(-half, -half);
+    shape.lineTo(half, -half);
+    shape.lineTo(half, half);
+    shape.lineTo(-half, half);
+    shape.closePath();
+    return;
+  }
+
+  shape.moveTo(-half + r, -half);
+  shape.lineTo(half - r, -half);
+  shape.quadraticCurveTo(half, -half, half, -half + r);
+  shape.lineTo(half, half - r);
+  shape.quadraticCurveTo(half, half, half - r, half);
+  shape.lineTo(-half + r, half);
+  shape.quadraticCurveTo(-half, half, -half, half - r);
+  shape.lineTo(-half, -half + r);
+  shape.quadraticCurveTo(-half, -half, -half + r, -half);
+  shape.closePath();
 }
 
 /**
