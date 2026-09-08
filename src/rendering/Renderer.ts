@@ -73,9 +73,13 @@ export class Renderer {
     const { shadowsEnabled, shadowMapSize } = this.#preset;
     this.#renderer.shadowMap.enabled = shadowsEnabled;
     if (shadowsEnabled) {
-      // PCF-soft is the right trade here: the board casts one large, soft
-      // contact shadow rather than many hard-edged ones.
-      this.#renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      // Plain PCF, softened per-light via `shadow.radius` / `blurSamples`.
+      // `PCFSoftShadowMap` is deprecated as of r185 — it silently falls back to
+      // PCFShadowMap and logs a warning on every load, so asking for it gave
+      // the warning *and* the harder shadow. Setting it explicitly and doing
+      // the softening on the light is what actually produces the soft contact
+      // shadow under each coin.
+      this.#renderer.shadowMap.type = THREE.PCFShadowMap;
     }
     // Lights read this when sizing their shadow maps.
     void shadowMapSize;

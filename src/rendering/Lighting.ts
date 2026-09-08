@@ -103,7 +103,11 @@ export class Lighting {
     // which would either leave acne on the board or detach coin shadows.
     shadow.bias = -0.0002;
     shadow.normalBias = 0.02;
-    shadow.radius = 3;
+    // Softening happens here rather than via a renderer-wide soft shadow mode.
+    // A coin is 3 cm across and sits flat on the board, so its contact shadow
+    // wants to be tight and soft-edged, not blurred into a smudge.
+    shadow.radius = 2.5;
+    shadow.blurSamples = 12;
   }
 
   dispose(): void {
