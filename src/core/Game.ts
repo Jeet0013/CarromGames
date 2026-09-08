@@ -6,6 +6,9 @@
  * in `gameplay/` in a later phase.
  */
 
+import * as THREE from 'three';
+
+import { BOARD_CONFIG } from '../board/BoardConfig';
 import { CarromBoard } from '../board/CarromBoard';
 import { PhysicsDebugRenderer } from '../physics/PhysicsDebugRenderer';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
@@ -306,6 +309,7 @@ export class Game {
     this.#turns.configureSeats(mode, seats);
     this.#hud.setSeats(seats);
     this.#hud.bind(this.#turns.match);
+    this.#lastBoardTop = -1;
     this.resetBoard();
     // Snap on entry; later turns swing.
     this.#faceActivePlayer(true);
@@ -634,6 +638,46 @@ export class Game {
     this.#turns.update();
   }
 
+  /** Board corners in world space, reused so the projection allocates nothing. */
+  readonly #boardCorner = new THREE.Vector3();
+  /** Last reported board bounds, to avoid redundant DOM writes. */
+  #lastBoardTop = -1;
+  #lastBoardBottom = -1;
+
+  /**
+   * Project the board and tell the HUD where its edges are.
+   *
+   * Done per frame because the camera moves — it swings between turns, pushes
+   * in on a shot, and reframes on resize — and a label pinned to a stale
+   * position would drift off the board. Four projections and a comparison is
+   * nothing; the DOM is only touched when the value actually changes.
+   */
+  #layoutHud(): void {
+    const half = BOARD_CONFIG.frame.outerSize / 2;
+    const camera = this.#camera.camera;
+    const height = this.#container.clientHeight;
+    if (height === 0) return;
+
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        this.#boardCorner.set(sx * half, BOARD_CONFIG.frame.height, sz * half);
+        this.#boardCorner.project(camera);
+        const y = ((1 - this.#boardCorner.y) / 2) * height;
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+
+    if (Math.abs(top - this.#lastBoardTop) < 1.5 && Math.abs(bottom - this.#lastBoardBottom) < 1.5) {
+      return;
+    }
+    this.#lastBoardTop = top;
+    this.#lastBoardBottom = bottom;
+    this.#hud.layoutAroundBoard(top, bottom, height);
+  }
+
   #render(_alpha: number, frameDelta: number): void {
     // Both run on the real frame delta, not the fixed step — they are
     // presentation, and must take the same wall-clock time at any frame rate.
@@ -644,6 +688,7 @@ export class Game {
     // per fixed step: several steps can run in one frame, and only the last
     // one is ever seen.
     this.#pieces.sync();
+    this.#layoutHud();
     this.#pocketEffect.update(frameDelta);
     // The visual reads the physics world's own powder level, so what is shown
     // and what the coins feel can never drift apart.

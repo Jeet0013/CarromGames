@@ -107,6 +107,35 @@ export class GameHUD {
   }
 
   /**
+   * Place each panel just outside the board's own edges.
+   *
+   * `top` and `bottom` are the board's projected screen bounds. Panels sit a
+   * fixed gap outside them, clamped so they stay on screen when the board fills
+   * the viewport. The active player's panel goes below the board — that player
+   * is sitting at the near edge, and their own information belongs on their
+   * side of it.
+   */
+  layoutAroundBoard(top: number, bottom: number, viewportHeight: number): void {
+    const GAP = 12;
+    const PANEL = 56;
+    // Never above the corner controls, never under the power meter.
+    const above = Math.min(
+      Math.max(GAP, viewportHeight - top + GAP),
+      viewportHeight - PANEL - GAP,
+    );
+    const below = Math.min(Math.max(GAP, bottom + GAP), viewportHeight - PANEL - GAP);
+
+    for (const seat of this.#seats) {
+      const panel = this.#panels.get(seat.slot);
+      if (!panel) continue;
+      // With one panel showing it is always the near player's, so always below.
+      if (this.#activeOnly) panel.setEdge('below', below);
+      else if (seat.side === PlayerSide.Top) panel.setEdge('above', above);
+      else panel.setEdge('below', below);
+    }
+  }
+
+  /**
    * Re-lay the panels if the viewport crosses the narrow threshold.
    *
    * Rotating a phone with four players changes which layout is viable, and a

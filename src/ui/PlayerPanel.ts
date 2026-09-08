@@ -211,6 +211,26 @@ export class PlayerPanel {
     }
   }
 
+  /**
+   * Pin the panel a fixed gap from a board edge.
+   *
+   * Passing the board's own screen bounds rather than a viewport corner is what
+   * keeps the label reading as part of the board: it tracks the board when the
+   * camera reframes, and it can never collide with the corner controls, because
+   * it is positioned relative to something that is nowhere near them.
+   */
+  setEdge(edge: 'above' | 'below', y: number): void {
+    if (edge === 'below') {
+      this.#root.style.top = `${Math.round(y)}px`;
+      this.#root.style.bottom = 'auto';
+    } else {
+      this.#root.style.bottom = `${Math.round(y)}px`;
+      this.#root.style.top = 'auto';
+    }
+    // A vertical transform would fight the explicit offset.
+    this.#root.style.transform = 'none';
+  }
+
   setVisible(visible: boolean): void {
     this.#root.style.display = visible ? 'flex' : 'none';
   }
