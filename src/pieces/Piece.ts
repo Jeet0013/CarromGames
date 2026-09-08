@@ -65,14 +65,29 @@ export class Piece {
     return this.#handle;
   }
 
-  /** Current board position, read from the simulation. */
+  /**
+   * Last position seen while the piece was in play.
+   *
+   * `pocket()` removes the rigid body from the world, and reading a removed
+   * body traps inside Rapier's WebAssembly with `unreachable` — it does not
+   * return null, it crashes the frame. Anything that surveys all pieces (the
+   * placement search, the AI's board scan, debug tooling) would have to
+   * remember to filter first, and forgetting once is fatal. Caching makes a
+   * pocketed piece answer safely instead.
+   */
+  #lastPosition: BoardPoint = { x: 0, z: 0 };
+
+  /** Current board position; the last live position once pocketed. */
   get position(): BoardPoint {
+    if (!this.#active) return this.#lastPosition;
     const t = this.#handle.body.translation();
-    return { x: t.x, z: t.z };
+    this.#lastPosition = { x: t.x, z: t.z };
+    return this.#lastPosition;
   }
 
-  /** Current planar speed. */
+  /** Current planar speed. Zero once out of play. */
   get speed(): number {
+    if (!this.#active) return 0;
     const v = this.#handle.body.linvel();
     return Math.hypot(v.x, v.z);
   }
@@ -95,6 +110,8 @@ export class Piece {
    */
   pocket(physics: PhysicsWorld): void {
     if (this.#pocketed) return;
+    // Capture the position while the body is still alive to read.
+    void this.position;
     this.#pocketed = true;
     this.#active = false;
     physics.removeBody(this.id);

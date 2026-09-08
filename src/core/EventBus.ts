@@ -68,6 +68,13 @@ export interface GameEvents {
   /** Queen lifecycle moved — drives the COVER THE QUEEN indicator. */
   'queen:stateChanged': { readonly from: QueenState; readonly to: QueenState };
 
+  /**
+   * Standing Queen obligation, or null to clear it. Separate from `ui:notify`
+   * because COVER THE QUEEN is a state the player must be able to look up, not
+   * a message that fades.
+   */
+  'queen:banner': { readonly message: string | null };
+
   /** Transient HUD toast: NICE SHOT, FOUL, YOUR TURN, … */
   'ui:notify': { readonly message: string; readonly tone: 'good' | 'bad' | 'neutral' };
 }

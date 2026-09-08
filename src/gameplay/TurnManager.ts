@@ -1,39 +1,47 @@
 /**
- * Turn state machine.
+ * Turn state machine and the bridge between physics and the rules.
  *
- * The single authority on what the player is allowed to do right now. Input,
- * UI, and later the AI all ask this rather than tracking their own flags — the
- * reliable way to guarantee a second shot cannot be fired while the board is
- * still moving.
+ * The single authority on what is legal right now. Input, UI, and the AI ask
+ * this rather than tracking their own flags — the reliable way to guarantee a
+ * second shot cannot be fired while the board is still moving.
  *
- * This phase implements the shooting cycle only:
+ * On settle it drives the full evaluation chain, then carries out the physical
+ * consequences the (pure) rule engine asked for:
  *
- *   STRIKER_POSITIONING → AIMING → SHOOTING → PHYSICS_SETTLING → (back)
- *
- * Evaluation, fouls, Queen handling, and player switching are later states in
- * the same machine; they are declared in `TurnState` and wired in Phase 7.
+ *   PHYSICS_SETTLING → SHOT_EVALUATION → QUEEN_EVALUATION → FOUL_EVALUATION
+ *                    → TURN_COMPLETE → PLAYER_SWITCH | STRIKER_POSITIONING
  */
 
+import { baselineZ } from '../board/BoardConfig';
 import type { EventBus } from '../core/EventBus';
+import { createMatchState, opponentOf, type MatchState } from '../core/GameState';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
-import { INTERACTIVE_TURN_STATES, PlayerSlot, TurnState } from '../core/types';
+import { PIECE_GEOMETRY } from '../physics/PhysicsConfig';
+import type { PieceFactory } from '../pieces/PieceFactory';
+import type { PocketManager } from './PocketManager';
+import { findFreePlacement } from './Placement';
+import { RuleEngine, Notification, type RuleDecision } from './RuleEngine';
+import { CLASSIC_CASUAL, type RuleSet } from './RuleSet';
+import { ShotEvaluator } from './ShotEvaluator';
+import {
+  INTERACTIVE_TURN_STATES,
+  PieceKind,
+  PlayerSlot,
+  QueenState,
+  TurnState,
+  type BoardPoint,
+} from '../core/types';
 
-/**
- * Legal transitions.
- *
- * Declared as data rather than scattered through `if` statements so an illegal
- * transition is caught centrally and loudly, instead of leaving the machine in
- * a state no one intended.
- */
+/** Legal transitions, declared as data so an illegal one is caught centrally. */
 const TRANSITIONS: Record<TurnState, readonly TurnState[]> = {
-  [TurnState.GameStart]: [TurnState.StrikerPositioning],
+  [TurnState.GameStart]: [TurnState.BreakTurn, TurnState.StrikerPositioning],
   [TurnState.BreakTurn]: [TurnState.StrikerPositioning],
   [TurnState.StrikerPositioning]: [TurnState.Aiming, TurnState.GameComplete],
   [TurnState.Aiming]: [TurnState.StrikerPositioning, TurnState.Shooting],
   [TurnState.Shooting]: [TurnState.PhysicsSettling],
-  [TurnState.PhysicsSettling]: [TurnState.ShotEvaluation, TurnState.TurnComplete],
-  [TurnState.ShotEvaluation]: [TurnState.QueenEvaluation, TurnState.FoulEvaluation],
-  [TurnState.QueenEvaluation]: [TurnState.FoulEvaluation, TurnState.TurnComplete],
+  [TurnState.PhysicsSettling]: [TurnState.ShotEvaluation],
+  [TurnState.ShotEvaluation]: [TurnState.QueenEvaluation],
+  [TurnState.QueenEvaluation]: [TurnState.FoulEvaluation],
   [TurnState.FoulEvaluation]: [TurnState.TurnComplete],
   [TurnState.TurnComplete]: [
     TurnState.PlayerSwitch,
@@ -41,101 +49,254 @@ const TRANSITIONS: Record<TurnState, readonly TurnState[]> = {
     TurnState.GameComplete,
   ],
   [TurnState.PlayerSwitch]: [TurnState.StrikerPositioning],
-  [TurnState.GameComplete]: [],
+  [TurnState.GameComplete]: [TurnState.GameStart],
 };
 
 export class TurnManager {
   readonly #events: EventBus;
   readonly #physics: PhysicsWorld;
+  readonly #pieces: PieceFactory;
+  readonly #pockets: PocketManager;
+  readonly #engine: RuleEngine;
 
   #state: TurnState = TurnState.GameStart;
-  #current: PlayerSlot = PlayerSlot.One;
+  #match: MatchState = createMatchState();
+  /** Did the striker touch anything this shot? Drives the no-contact foul. */
+  #contactThisShot = false;
 
-  constructor(events: EventBus, physics: PhysicsWorld) {
+  constructor(
+    events: EventBus,
+    physics: PhysicsWorld,
+    pieces: PieceFactory,
+    pockets: PocketManager,
+    rules: RuleSet = CLASSIC_CASUAL,
+  ) {
     this.#events = events;
     this.#physics = physics;
+    this.#pieces = pieces;
+    this.#pockets = pockets;
+    this.#engine = new RuleEngine(rules);
+
+    this.#events.on('physics:contact', () => {
+      this.#contactThisShot = true;
+    });
   }
 
   get state(): TurnState {
     return this.#state;
   }
 
+  get match(): MatchState {
+    return this.#match;
+  }
+
   get currentPlayer(): PlayerSlot {
-    return this.#current;
+    return this.#match.currentPlayer;
+  }
+
+  get engine(): RuleEngine {
+    return this.#engine;
   }
 
   /**
-   * Whether the player may touch the striker right now.
+   * Whether the player may touch the striker.
    *
-   * Input asks this on every pointer event; it is the gate that makes shooting
-   * mid-simulation impossible rather than merely discouraged.
+   * The gate every pointer event passes. A finished match accepts nothing.
    */
   get acceptsInput(): boolean {
-    return INTERACTIVE_TURN_STATES.includes(this.#state);
+    return this.#match.winner === null && INTERACTIVE_TURN_STATES.includes(this.#state);
   }
 
-  /** Begin play. */
   start(): void {
     this.#transition(TurnState.StrikerPositioning);
+    this.#events.emit('ui:notify', { message: Notification.YourTurn, tone: 'neutral' });
   }
 
-  /** Player has grabbed the striker and started aiming. */
+  /** Reset for a new match. */
+  reset(): void {
+    this.#match = createMatchState();
+    this.#contactThisShot = false;
+    if (this.#state === TurnState.GameComplete) this.#transition(TurnState.GameStart);
+    this.#state = TurnState.StrikerPositioning;
+  }
+
   beginAiming(): boolean {
     if (this.#state !== TurnState.StrikerPositioning) return false;
     this.#transition(TurnState.Aiming);
     return true;
   }
 
-  /** Player released without a valid shot — back to placement. */
   cancelAiming(): void {
     if (this.#state !== TurnState.Aiming) return;
     this.#transition(TurnState.StrikerPositioning);
   }
 
-  /**
-   * A shot has been released.
-   *
-   * Moves straight through `SHOOTING` into `PHYSICS_SETTLING` and starts the
-   * settle watch. From here nothing the player does reaches the striker until
-   * the board is genuinely at rest.
-   */
   beginShot(): boolean {
     if (this.#state !== TurnState.Aiming) return false;
+    this.#contactThisShot = false;
     this.#transition(TurnState.Shooting);
     this.#transition(TurnState.PhysicsSettling);
     this.#physics.beginSettleWatch();
     return true;
   }
 
-  /**
-   * Called every fixed step. While settling, watches for the board to stop.
-   *
-   * Rest is owned by `PhysicsWorld`, not re-derived here — one definition of
-   * "stopped", used by everything.
-   */
+  /** Called every fixed step. Detects settle and runs evaluation once. */
   update(): void {
     if (this.#state !== TurnState.PhysicsSettling) return;
     if (!this.#physics.isAtRest) return;
 
-    this.#events.emit('shot:settled', { by: this.#current });
+    this.#events.emit('shot:settled', { by: this.currentPlayer });
+    this.#resolveShot();
+  }
 
-    // Phase 7 routes through evaluation, fouls, and the Queen. Until those
-    // exist, the turn returns to the same player so the board stays playable.
+  /**
+   * Run the rule chain and apply its consequences.
+   *
+   * The engine is pure — it decides, this acts. Keeping the board mutations
+   * here means every rule remains testable without a physics world.
+   */
+  #resolveShot(): void {
+    const shooter = this.currentPlayer;
+
+    const pocketed = this.#pockets.pocketedThisShot.map((entry) => ({
+      pieceId: entry.pieceId ?? '',
+      kind: entry.kind ?? PieceKind.WhiteCoin,
+      pocketIndex: entry.pocketIndex ?? 0,
+    }));
+
+    const outcome = ShotEvaluator.evaluate(this.#match, {
+      by: shooter,
+      pocketed,
+      madeContact: this.#contactThisShot,
+    });
+
+    this.#transition(TurnState.ShotEvaluation);
+    const decision = this.#engine.evaluate(this.#match, outcome);
+
+    this.#transition(TurnState.QueenEvaluation);
+    if (decision.returnQueenToCentre) this.#returnQueen();
+
+    this.#transition(TurnState.FoulEvaluation);
+    this.#applyCoinReturns(shooter, decision);
+
+    // Commit to state only after the board changes it implies are done.
+    this.#engine.apply(this.#match, outcome, decision);
+
+    this.#announce(decision);
+
     this.#transition(TurnState.TurnComplete);
+
+    if (decision.winner !== null) {
+      this.#transition(TurnState.GameComplete);
+      this.#events.emit('rules:gameComplete', { winner: decision.winner });
+      return;
+    }
+
+    if (!decision.continueTurn) {
+      this.#transition(TurnState.PlayerSwitch);
+      this.#events.emit('turn:playerSwitched', { to: this.#match.currentPlayer });
+    }
+
+    this.#resetStrikerForTurn();
     this.#transition(TurnState.StrikerPositioning);
   }
 
-  /** Hand the turn to the other seat. */
+  /** Emit notifications and keep the standing-obligation banner honest. */
+  #announce(decision: RuleDecision): void {
+    for (const message of decision.notifications) {
+      // COVER THE QUEEN is a standing obligation, not an event; it is pinned
+      // separately rather than fading after a couple of seconds.
+      if (message === Notification.CoverTheQueen) continue;
+      const tone =
+        message === Notification.Foul || message === Notification.Miss
+          ? 'bad'
+          : message === Notification.KeepPlaying || message === Notification.QueenCovered
+            ? 'good'
+            : 'neutral';
+      this.#events.emit('ui:notify', { message, tone });
+    }
+
+    this.#events.emit('queen:banner', {
+      message:
+        this.#match.queen === QueenState.PocketedPendingCover ||
+        decision.queenState === QueenState.PocketedPendingCover
+          ? Notification.CoverTheQueen
+          : null,
+    });
+
+    if (decision.ownershipAssigned) {
+      this.#events.emit('rules:ownershipAssigned', decision.ownershipAssigned);
+    }
+    for (const foul of decision.fouls) {
+      this.#events.emit('rules:foul', { player: decision.winner ?? this.currentPlayer, kind: foul });
+    }
+    if (decision.queenTransition) {
+      this.#events.emit('queen:stateChanged', decision.queenTransition);
+    }
+  }
+
+  /** Put the Queen back as near the centre as there is room for. */
+  #returnQueen(): void {
+    const queen = this.#pieces.queen;
+    const at = findFreePlacement({
+      occupied: this.#occupiedPositions(queen.id),
+      radius: PIECE_GEOMETRY.coin.radius,
+      preferred: { x: 0, z: 0 },
+    });
+    queen.reset(this.#physics, at);
+  }
+
+  /**
+   * Hand back coins the foul penalty demands.
+   *
+   * A player with nothing banked cannot pay; the engine has already marked
+   * that penalty deferred and turned it into debt, so nothing happens here.
+   */
+  #applyCoinReturns(shooter: PlayerSlot, decision: RuleDecision): void {
+    if (decision.coinsToReturn <= 0) return;
+
+    const color = this.#match.players[shooter].color;
+    if (color === null) return;
+
+    const candidates = this.#pieces.pieces.filter(
+      (piece) => piece.pocketed && piece.color === color,
+    );
+
+    for (let i = 0; i < decision.coinsToReturn && i < candidates.length; i += 1) {
+      const piece = candidates[i];
+      if (!piece) continue;
+      const at = findFreePlacement({
+        occupied: this.#occupiedPositions(piece.id),
+        radius: PIECE_GEOMETRY.coin.radius,
+        preferred: { x: 0, z: 0 },
+      });
+      piece.reset(this.#physics, at);
+    }
+  }
+
+  #occupiedPositions(excludeId: string): BoardPoint[] {
+    return this.#pieces.pieces
+      .filter((piece) => piece.active && piece.id !== excludeId)
+      .map((piece) => piece.position);
+  }
+
+  /** Park the striker on the incoming player's baseline. */
+  #resetStrikerForTurn(): void {
+    const striker = this.#pieces.striker;
+    if (striker.pocketed) striker.reset(this.#physics, striker.home);
+    this.#physics.setPosition('striker', 0, baselineZ(this.#match.currentPlayer));
+    void PIECE_GEOMETRY;
+  }
+
+  /** Hand the turn over explicitly. Used by local pass-and-play. */
   switchPlayer(): void {
-    this.#current = this.#current === PlayerSlot.One ? PlayerSlot.Two : PlayerSlot.One;
-    this.#events.emit('turn:playerSwitched', { to: this.#current });
+    this.#match.currentPlayer = opponentOf(this.#match.currentPlayer);
+    this.#events.emit('turn:playerSwitched', { to: this.#match.currentPlayer });
   }
 
   #transition(to: TurnState): void {
     const allowed = TRANSITIONS[this.#state];
     if (!allowed.includes(to)) {
-      // Loud rather than silent: an illegal transition means a system asked for
-      // something impossible, and swallowing it hides the real bug.
       console.error(`[TurnManager] illegal transition ${this.#state} → ${to}`);
       return;
     }

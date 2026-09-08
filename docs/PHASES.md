@@ -21,9 +21,9 @@ giving 14 phases. Content is unchanged — only the grouping.
 | 4 | Coins and striker | ✅ Done | Meshes + bodies, `PieceFactory` |
 | 5 | Input and shooting | ✅ Done | Positioning, aiming, power, release |
 | 6 | Pocket detection | ✅ Done | Corner sensors, removal, events |
-| 7 | Game rules | ⬜ Next | `RuleEngine`, `TurnManager`, fouls |
-| 8 | Queen logic | ⬜ Not started | Cover, return-to-center, UI signal |
-| 9 | AI | ⬜ Not started | Planner, scorer, difficulty tiers |
+| 7 | Game rules | ✅ Done | `RuleEngine`, `TurnManager`, fouls |
+| 8 | Queen logic | ✅ Done | Folded into Phase 7 — `QueenManager`, cover, return, banner |
+| 9 | AI | ⬜ Next | Planner, scorer, difficulty tiers |
 | 10 | UI | ⬜ Not started | All 11 screens, HUD |
 | 11 | Career levels | ⬜ Not started | 30 data-driven levels, challenges |
 | 12 | Audio and effects | ⬜ Not started | SFX, music, particles |
@@ -119,3 +119,4 @@ limitations, recommended next phase.
 - Phase 4 — [`reports/phase-04.md`](./reports/phase-04.md)
 - Phase 5 — [`reports/phase-05.md`](./reports/phase-05.md)
 - Phase 6 — [`reports/phase-06.md`](./reports/phase-06.md)
+- Phase 7 — [`reports/phase-07.md`](./reports/phase-07.md) (includes Queen logic)

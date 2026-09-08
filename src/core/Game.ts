@@ -13,6 +13,7 @@ import { PieceFactory } from '../pieces/PieceFactory';
 import { InputManager } from '../input/InputManager';
 import { TurnManager } from '../gameplay/TurnManager';
 import { PocketManager } from '../gameplay/PocketManager';
+import { Notifications } from '../ui/Notifications';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
@@ -46,6 +47,7 @@ export class Game {
   readonly #turns: TurnManager;
   readonly #pockets: PocketManager;
   readonly #input: InputManager;
+  readonly #notifications: Notifications;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
 
@@ -82,8 +84,22 @@ export class Game {
     this.#pieces = new PieceFactory(this.#physics);
     this.#scene.add(this.#pieces.group);
 
-    this.#turns = new TurnManager(this.events, this.#physics);
+    // Pockets must exist before turns: the turn machine reads the shot log.
     this.#pockets = new PocketManager(this.events, this.#physics, this.#pieces);
+    this.#turns = new TurnManager(
+      this.events,
+      this.#physics,
+      this.#pieces,
+      this.#pockets,
+    );
+
+    this.#notifications = new Notifications(container);
+    this.events.on('ui:notify', ({ message, tone }) =>
+      this.#notifications.show(message, tone),
+    );
+    this.events.on('queen:banner', ({ message }) =>
+      this.#notifications.setBanner(message),
+    );
     this.#input = new InputManager({
       canvas: this.#canvas,
       camera: this.#camera.camera,
@@ -155,6 +171,8 @@ export class Game {
   resetBoard(): void {
     this.#pieces.resetBoard();
     this.#pockets.reset();
+    this.#turns.reset();
+    this.#notifications.setBanner(null);
     this.#input.resetStriker();
   }
 
@@ -263,6 +281,7 @@ export class Game {
     this.#cameraTuner = undefined;
 
     window.removeEventListener('keydown', this.#onDebugKey);
+    this.#notifications.dispose();
     this.#input.dispose();
     this.#pieces.dispose();
     this.#physicsDebug?.dispose();

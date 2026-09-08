@@ -47,7 +47,17 @@ export interface ShotLogEntry {
 const DROP_SECONDS = 0.42;
 
 interface DropAnimation {
-  readonly mesh: THREE.Object3D;
+  /**
+   * The piece, not just its mesh.
+   *
+   * A pocketed piece can be put back on the board *while its drop is still
+   * playing* — an uncovered Queen returns to the centre, a foul hands a coin
+   * back — and the rules act the instant the board settles, which is well
+   * inside the 0.42 s animation. Holding only the mesh meant the animation
+   * carried on and finished by hiding a piece that was legitimately back in
+   * play, leaving an invisible coin the player could still hit.
+   */
+  readonly piece: Piece;
   readonly from: THREE.Vector3;
   readonly to: THREE.Vector3;
   elapsed: number;
@@ -179,7 +189,7 @@ export class PocketManager {
     // `pocket()` hides the mesh; the drop animation needs it visible.
     piece.mesh.visible = true;
     this.#drops.push({
-      mesh: piece.mesh,
+      piece,
       from: meshPosition,
       to: new THREE.Vector3(pocket.x, -BOARD_CONFIG.pocket.dropDepth, pocket.z),
       elapsed: 0,
@@ -207,17 +217,26 @@ export class PocketManager {
       const drop = this.#drops[i];
       if (!drop) continue;
 
+      // The piece was returned to the board mid-drop: abandon the animation
+      // and hand the mesh back to the simulation.
+      if (drop.piece.active) {
+        drop.piece.mesh.scale.setScalar(1);
+        drop.piece.mesh.visible = true;
+        this.#drops.splice(i, 1);
+        continue;
+      }
+
       drop.elapsed += delta;
       const t = Math.min(1, drop.elapsed / DROP_SECONDS);
       // Ease-in: a coin dropping accelerates, it does not glide.
       const eased = t * t;
 
-      drop.mesh.position.lerpVectors(drop.from, drop.to, eased);
-      drop.mesh.scale.setScalar(1 - eased * 0.45);
+      drop.piece.mesh.position.lerpVectors(drop.from, drop.to, eased);
+      drop.piece.mesh.scale.setScalar(1 - eased * 0.45);
 
       if (t >= 1) {
-        drop.mesh.visible = false;
-        drop.mesh.scale.setScalar(1);
+        drop.piece.mesh.visible = false;
+        drop.piece.mesh.scale.setScalar(1);
         this.#drops.splice(i, 1);
       }
     }
@@ -229,8 +248,8 @@ export class PocketManager {
     this.#shotActive = false;
     this.#previous.clear();
     for (const drop of this.#drops) {
-      drop.mesh.scale.setScalar(1);
-      drop.mesh.visible = true;
+      drop.piece.mesh.scale.setScalar(1);
+      drop.piece.mesh.visible = true;
     }
     this.#drops.length = 0;
   }

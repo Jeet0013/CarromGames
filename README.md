@@ -33,6 +33,7 @@ Then open the URL Vite prints.
 npm run build      # typecheck + production build
 npm run preview    # serve the production build
 npm run typecheck  # types only, no emit
+npm test           # rule validation suite
 ```
 
 ## Features
@@ -65,10 +66,10 @@ fires them through the same striker and physics as a human — no faked outcomes
 Built in 14 sequential phases; a phase ships only once it runs clean. Current
 progress is tracked in [docs/PHASES.md](docs/PHASES.md).
 
-> **Phase 6 — Pocket detection: complete.** The game is playable end to end:
-> position the striker on the baseline, pull back to aim, release to shoot.
-> Real Rapier physics, all 20 pieces, four working pockets with a shot event
-> log. Phase 7 brings the rules that decide what a pocket means.
+> **Phase 7 — Game rules: complete.** A full match is playable: colours are
+> claimed on the first pocket, own coins keep the turn, fouls and the Queen
+> cover rule are enforced, and victory is detected. 28 automated rule tests
+> pass. Phase 9 brings the AI opponent.
 
 ## Tech
 
