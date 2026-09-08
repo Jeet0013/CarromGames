@@ -29,6 +29,8 @@ import { VictoryScreen } from '../ui/VictoryScreen';
 import { PowderEffect } from '../effects/PowderEffect';
 import { PowderCan } from '../ui/PowderCan';
 import { CinematicCameraManager } from '../camera/CinematicCameraManager';
+import { NetworkManager, type PieceSnapshot } from '../net/NetworkManager';
+import { OnlineLobby } from '../ui/OnlineLobby';
 import { PlayerSide } from './PlayerSide';
 import { GameMode, PlayerSlot } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
@@ -79,6 +81,8 @@ export class Game {
   readonly #powder: PowderEffect;
   readonly #powderCan: PowderCan;
   readonly #cinematic: CinematicCameraManager;
+  readonly #net: NetworkManager;
+  readonly #lobby: OnlineLobby;
   #lastMode: GameMode = GameMode.LocalMultiplayer;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
@@ -149,6 +153,14 @@ export class Game {
     this.#audio = new AudioManager(this.events);
     this.#soundToggle = new SoundToggle(container, this.#audio);
 
+    this.#net = new NetworkManager(this.events);
+    this.#lobby = new OnlineLobby(container, () => {
+      this.#net.disconnect();
+      this.#lobby.hide();
+      this.showMenu();
+    });
+    this.#wireNetwork();
+
     this.#victory = new VictoryScreen(
       container,
       () => this.#startMode(this.#lastMode),
@@ -197,7 +209,11 @@ export class Game {
       this.#turns,
       this.#input.aimSystem,
     );
-    this.#input.setLock(() => this.#ai.isActing);
+    this.#input.setLock(
+      () =>
+        this.#ai.isActing ||
+        (this.#net.isOnline && this.#turns.currentPlayer !== this.#net.localSlot),
+    );
     // The shot camera performs for the player only; the computer's turn keeps
     // the stable wide framing.
     this.#cinematic.setHumanSeatTest((slot) => !this.#ai.controls(slot));
@@ -305,6 +321,101 @@ export class Game {
     return this.#ai;
   }
 
+  get net(): NetworkManager {
+    return this.#net;
+  }
+
+  /** Create a room and show the share link. */
+  async #hostOnline(): Promise<void> {
+    try {
+      this.#lobby.showHosting('Creating room…', '');
+      const roomId = await this.#net.host();
+      this.#lobby.showHosting(this.#net.shareLink, roomId);
+    } catch (error) {
+      this.#lobby.setStatus(
+        `Could not create a room: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+  }
+
+  /** Join a room from a shared link. Called at boot when `?join=` is present. */
+  async joinOnline(roomId: string): Promise<void> {
+    this.#menu.hide();
+    this.#lobby.showJoining();
+    try {
+      await this.#net.join(roomId);
+    } catch (error) {
+      this.#lobby.setStatus(
+        error instanceof Error ? error.message : 'Could not join that game.',
+      );
+    }
+  }
+
+  /**
+   * Connect the network to the game.
+   *
+   * Shots go both ways; board state goes one way. The host is the referee — see
+   * NetworkManager for why replaying shots alone is not enough.
+   */
+  #wireNetwork(): void {
+    this.#net.onStatus = (status, detail) => {
+      if (status === 'connected') {
+        this.#lobby.hide();
+        this.setMode(GameMode.Online);
+        this.#ai.configure(null, AIDifficulty.Normal);
+        this.#turns.start();
+        this.events.emit('ui:notify', { message: 'OPPONENT CONNECTED', tone: 'good' });
+      }
+      if (status === 'disconnected') {
+        this.events.emit('ui:notify', { message: 'OPPONENT LEFT', tone: 'bad' });
+      }
+      if (status === 'error' && detail) this.#lobby.setStatus(detail);
+    };
+
+    // A shot from the other device is replayed through the same turn machine
+    // that a local shot uses, so the rules cannot tell them apart.
+    this.#net.onShot = (by, shot) => {
+      if (by === this.#net.localSlot) return;
+      this.#physics.setPosition('striker', shot.origin.x, shot.origin.z);
+      this.#turns.beginAiming();
+      this.#turns.executeShot(shot);
+    };
+
+    // Guest only: adopt the host's positions once its shot has settled.
+    this.#net.onSync = (pieces, currentPlayer) => {
+      for (const snapshot of pieces) {
+        const piece = this.#pieces.get(snapshot.id);
+        if (!piece) continue;
+        if (!snapshot.active && piece.active) piece.pocket(this.#physics);
+        else if (snapshot.active) {
+          if (piece.pocketed) piece.reset(this.#physics, { x: snapshot.x, z: snapshot.z });
+          else this.#physics.setPosition(snapshot.id, snapshot.x, snapshot.z);
+        }
+      }
+      this.#turns.match.currentPlayer = currentPlayer;
+      this.#hud.bind(this.#turns.match);
+    };
+
+    // Relay every locally-taken shot.
+    this.events.on('shot:fired', ({ by, shot }) => {
+      if (!this.#net.isOnline) return;
+      if (by !== this.#net.localSlot) return;
+      this.#net.sendShot(by, shot);
+    });
+
+    // Host publishes the truth after every shot.
+    this.events.on('shot:settled', () => {
+      if (!this.#net.isHost) return;
+      const snapshot: PieceSnapshot[] = this.#pieces.pieces.map((piece) => ({
+        id: piece.id,
+        x: +piece.position.x.toFixed(4),
+        z: +piece.position.z.toFixed(4),
+        active: piece.active,
+      }));
+      this.#net.sendSync(snapshot, this.#turns.match.currentPlayer);
+    });
+  }
+
   get cinematic(): CinematicCameraManager {
     return this.#cinematic;
   }
@@ -331,6 +442,15 @@ export class Game {
   #startMode(mode: GameMode): void {
     this.#lastMode = mode;
     this.#victory.hide();
+
+    if (mode === GameMode.Online) {
+      this.#menu.hide();
+      void this.#hostOnline();
+      return;
+    }
+    // Leaving an online game must actually drop the connection, or the peer
+    // keeps sending shots into a match that no longer exists.
+    if (this.#net.isOnline) this.#net.disconnect();
     // Playing the computer needs a difficulty before a match can begin.
     if (mode === GameMode.QuickMatch) {
       this.#menu.hide();
@@ -485,6 +605,8 @@ export class Game {
     this.#cameraTuner = undefined;
 
     window.removeEventListener('keydown', this.#onDebugKey);
+    this.#net.disconnect();
+    this.#lobby.dispose();
     this.#powderCan.dispose();
     this.#powder.dispose();
     this.#victory.dispose();
@@ -536,6 +658,12 @@ const SEAT_LAYOUTS: Record<GameMode, readonly SeatConfig[]> = {
     { slot: PlayerSlot.Two, side: PlayerSide.Top, name: 'Player 2', initials: 'P2', accent: SEAT_ACCENTS.top },
     { slot: PlayerSlot.Three, side: PlayerSide.Right, name: 'Player 3', initials: 'P3', accent: SEAT_ACCENTS.right },
     { slot: PlayerSlot.Four, side: PlayerSide.Bottom, name: 'Player 4', initials: 'P4', accent: SEAT_ACCENTS.bottom },
+  ],
+  // Online is two seats like local play; the difference is only which device
+  // owns which one, which `NetworkManager.localSlot` decides.
+  [GameMode.Online]: [
+    { slot: PlayerSlot.One, side: PlayerSide.Bottom, name: 'You', initials: 'YO', accent: SEAT_ACCENTS.bottom },
+    { slot: PlayerSlot.Two, side: PlayerSide.Top, name: 'Friend', initials: 'FR', accent: SEAT_ACCENTS.top },
   ],
   [GameMode.Career]: [
     { slot: PlayerSlot.One, side: PlayerSide.Bottom, name: 'You', initials: 'YO', accent: SEAT_ACCENTS.bottom },

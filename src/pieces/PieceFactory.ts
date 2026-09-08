@@ -17,6 +17,7 @@ import { Queen } from './Queen';
 import { Striker } from './Striker';
 import { PHYSICS_CONFIG, PIECE_GEOMETRY } from '../physics/PhysicsConfig';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
+import { createFaceTexture, type FaceKind } from './PieceTexture';
 import { CoinColor, PlayerSlot, type BoardPoint } from '../core/types';
 
 /**
@@ -44,6 +45,9 @@ export class PieceFactory {
   readonly #coinGeometry: THREE.BufferGeometry;
   readonly #strikerGeometry: THREE.BufferGeometry;
   readonly #materials: Record<string, THREE.Material>;
+  /** Top-face decals: the turned rings that make each piece identifiable. */
+  readonly #faceGeometry: Record<'coin' | 'striker', THREE.BufferGeometry>;
+  readonly #faceMaterials: Record<FaceKind, THREE.Material>;
 
   constructor(physics: PhysicsWorld) {
     this.#physics = physics;
@@ -84,6 +88,41 @@ export class PieceFactory {
         clearcoat: 0.85,
         clearcoatRoughness: 0.1,
       }),
+    };
+
+    // A thin disc laid on each piece's top face. The lathe body handles the
+    // silhouette and the rim; this carries the markings, because a lathe's UVs
+    // wrap around the axis and cannot hold a concentric pattern.
+    const faceDisc = (radius: number): THREE.BufferGeometry => {
+      const geometry = new THREE.CircleGeometry(radius * 0.995, 40);
+      geometry.rotateX(-Math.PI / 2);
+      return geometry;
+    };
+    this.#faceGeometry = {
+      coin: faceDisc(coin.radius),
+      striker: faceDisc(striker.radius),
+    };
+
+    const faceMaterial = (kind: FaceKind, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
+      new THREE.MeshStandardMaterial({
+        map: createFaceTexture(kind),
+        transparent: true,
+        roughness: 0.34,
+        metalness: 0.02,
+        // Sits a hair above the body; without this the two coplanar faces
+        // z-fight and the markings flicker as the camera moves.
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+        ...extra,
+      });
+
+    this.#faceMaterials = {
+      light: faceMaterial('light'),
+      dark: faceMaterial('dark'),
+      queen: faceMaterial('queen'),
+      // The striker is lacquered harder than a wooden coin.
+      striker: faceMaterial('striker', { roughness: 0.18, metalness: 0.06 }),
     };
 
     this.#build();
@@ -135,7 +174,7 @@ export class PieceFactory {
 
     this.#queen = new Queen({
       id: 'queen',
-      mesh: this.#createMesh(this.#coinGeometry, 'queen'),
+      mesh: this.#createMesh(this.#coinGeometry, 'queen', 'queen'),
       handle: this.#createBody('queen', layout.queen, PIECE_GEOMETRY.coin.radius, false),
       home: layout.queen,
     });
@@ -150,6 +189,7 @@ export class PieceFactory {
         mesh: this.#createMesh(
           this.#coinGeometry,
           entry.color === CoinColor.White ? 'white' : 'black',
+          entry.color === CoinColor.White ? 'light' : 'dark',
         ),
         handle: this.#createBody(id, entry.at, PIECE_GEOMETRY.coin.radius, false),
         home: entry.at,
@@ -161,7 +201,7 @@ export class PieceFactory {
     const strikerHome: BoardPoint = { x: 0, z: baselineZ(PlayerSlot.One) };
     this.#striker = new Striker({
       id: 'striker',
-      mesh: this.#createMesh(this.#strikerGeometry, 'striker'),
+      mesh: this.#createMesh(this.#strikerGeometry, 'striker', 'striker', true),
       handle: this.#createBody(
         'striker',
         strikerHome,
@@ -199,7 +239,12 @@ export class PieceFactory {
     piece.sync();
   }
 
-  #createMesh(geometry: THREE.BufferGeometry, material: string): THREE.Mesh {
+  #createMesh(
+    geometry: THREE.BufferGeometry,
+    material: string,
+    face: FaceKind,
+    isStriker = false,
+  ): THREE.Mesh {
     const mat = this.#materials[material];
     if (!mat) throw new Error(`Unknown piece material: ${material}`);
     const mesh = new THREE.Mesh(geometry, mat);
@@ -207,6 +252,17 @@ export class PieceFactory {
     mesh.receiveShadow = true;
     // Geometry and material are shared and owned by this factory.
     mesh.userData['sharedResources'] = true;
+
+    // The marked face, parented so it follows the piece for free.
+    const spec = isStriker ? PIECE_GEOMETRY.striker : PIECE_GEOMETRY.coin;
+    const decal = new THREE.Mesh(
+      this.#faceGeometry[isStriker ? 'striker' : 'coin'],
+      this.#faceMaterials[face],
+    );
+    decal.position.y = spec.thickness / 2 + 0.0015;
+    decal.userData['sharedResources'] = true;
+    mesh.add(decal);
+
     return mesh;
   }
 
@@ -234,6 +290,11 @@ export class PieceFactory {
     this.#coinGeometry.dispose();
     this.#strikerGeometry.dispose();
     for (const material of Object.values(this.#materials)) material.dispose();
+    for (const geometry of Object.values(this.#faceGeometry)) geometry.dispose();
+    for (const material of Object.values(this.#faceMaterials)) {
+      (material as THREE.MeshStandardMaterial).map?.dispose();
+      material.dispose();
+    }
   }
 }
 

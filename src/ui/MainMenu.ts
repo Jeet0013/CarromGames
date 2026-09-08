@@ -48,6 +48,13 @@ export const MENU_OPTIONS: readonly MenuOption[] = [
     accent: '#a487e0',
   },
   {
+    mode: GameMode.Online,
+    title: 'Play with a Friend',
+    blurb: 'Share a link. They open it and you play across two devices.',
+    tag: 'Online · 2 Players',
+    accent: '#5fa8f5',
+  },
+  {
     mode: GameMode.Practice,
     title: 'Practice',
     blurb: 'The board to yourself. No turns, no pressure.',

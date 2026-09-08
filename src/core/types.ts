@@ -110,6 +110,7 @@ export const GameMode = {
   Practice: 'PRACTICE',
   LocalMultiplayer: 'LOCAL_MULTIPLAYER',
   FourPlayer: 'FOUR_PLAYER',
+  Online: 'ONLINE',
   Career: 'CAREER',
 } as const;
 export type GameMode = (typeof GameMode)[keyof typeof GameMode];

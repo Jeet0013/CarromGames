@@ -11,6 +11,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { REVISION as THREE_REVISION } from 'three';
 
 import { Game } from './core/Game';
+import { NetworkManager } from './net/NetworkManager';
 import { GAME_CONFIG, IS_DEV } from './config/GameConfig';
 import { PHYSICS_CONFIG } from './physics/PhysicsConfig';
 
@@ -60,6 +61,10 @@ async function bootstrap(): Promise<void> {
   });
 
   game.start();
+
+  // Opened from a shared link: go straight into joining that room.
+  const room = NetworkManager.roomFromUrl();
+  if (room) void game.joinOnline(room);
 
   if (IS_DEV) {
     console.info(
