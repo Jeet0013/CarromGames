@@ -12,9 +12,10 @@
  *                    → TURN_COMPLETE → PLAYER_SWITCH | STRIKER_POSITIONING
  */
 
-import { baselineZ } from '../board/BoardConfig';
+
 import type { EventBus } from '../core/EventBus';
-import { createMatchState, opponentOf, type MatchState } from '../core/GameState';
+import { createMatchState, nextSeat, sideOf, type MatchState } from '../core/GameState';
+import { strikerHome, type PlayerSide } from '../core/PlayerSide';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import { PIECE_GEOMETRY } from '../physics/PhysicsConfig';
 import type { PieceFactory } from '../pieces/PieceFactory';
@@ -24,6 +25,7 @@ import { RuleEngine, Notification, type RuleDecision } from './RuleEngine';
 import { CLASSIC_CASUAL, type RuleSet } from './RuleSet';
 import { ShotEvaluator } from './ShotEvaluator';
 import {
+  GameMode,
   INTERACTIVE_TURN_STATES,
   PieceKind,
   PlayerSlot,
@@ -61,6 +63,8 @@ export class TurnManager {
 
   #state: TurnState = TurnState.GameStart;
   #match: MatchState = createMatchState();
+  #mode: GameMode = GameMode.LocalMultiplayer;
+  #seats: Array<{ slot: PlayerSlot; side: PlayerSide }> = [];
   /** Did the striker touch anything this shot? Drives the no-contact foul. */
   #contactThisShot = false;
 
@@ -94,6 +98,11 @@ export class TurnManager {
     return this.#match.currentPlayer;
   }
 
+  /** Which edge the active seat shoots from. */
+  get currentSide(): PlayerSide {
+    return sideOf(this.#match, this.#match.currentPlayer);
+  }
+
   get engine(): RuleEngine {
     return this.#engine;
   }
@@ -108,13 +117,40 @@ export class TurnManager {
   }
 
   start(): void {
-    this.#transition(TurnState.StrikerPositioning);
+    // `setMode` configures seats, which resets straight into positioning, so
+    // starting is often a no-op by the time it is called. Transitioning
+    // regardless would log an illegal STRIKER_POSITIONING → STRIKER_POSITIONING.
+    if (this.#state !== TurnState.StrikerPositioning) {
+      this.#state = TurnState.GameStart;
+      this.#transition(TurnState.StrikerPositioning);
+    }
     this.#events.emit('ui:notify', { message: Notification.YourTurn, tone: 'neutral' });
+  }
+
+  /**
+   * Set which seats play, and in what order.
+   *
+   * Stored on match state so turn passing and striker placement stay data
+   * driven — adding the four-player seats is a layout entry, not new logic.
+   */
+  configureSeats(
+    mode: GameMode,
+    seats: ReadonlyArray<{ slot: PlayerSlot; side: PlayerSide }>,
+  ): void {
+    this.#seats = seats.map((seat) => ({ ...seat }));
+    this.#mode = mode;
+    this.reset();
   }
 
   /** Reset for a new match. */
   reset(): void {
-    this.#match = createMatchState();
+    this.#match = createMatchState(this.#mode);
+    if (this.#seats.length > 0) {
+      this.#match.seatOrder = this.#seats.map((seat) => seat.slot);
+      for (const seat of this.#seats) this.#match.players[seat.slot].side = seat.side;
+      const first = this.#seats[0];
+      if (first) this.#match.currentPlayer = first.slot;
+    }
     this.#contactThisShot = false;
     if (this.#state === TurnState.GameComplete) this.#transition(TurnState.GameStart);
     this.#state = TurnState.StrikerPositioning;
@@ -280,18 +316,20 @@ export class TurnManager {
       .map((piece) => piece.position);
   }
 
-  /** Park the striker on the incoming player's baseline. */
+  /** Park the striker on the incoming seat's baseline, wherever that edge is. */
   #resetStrikerForTurn(): void {
     const striker = this.#pieces.striker;
     if (striker.pocketed) striker.reset(this.#physics, striker.home);
-    this.#physics.setPosition('striker', 0, baselineZ(this.#match.currentPlayer));
+    const home = strikerHome(this.currentSide);
+    this.#physics.setPosition('striker', home.x, home.z);
     void PIECE_GEOMETRY;
   }
 
-  /** Hand the turn over explicitly. Used by local pass-and-play. */
+  /** Hand the turn over explicitly. Follows `seatOrder`, so 2P and 4P both work. */
   switchPlayer(): void {
-    this.#match.currentPlayer = opponentOf(this.#match.currentPlayer);
+    this.#match.currentPlayer = nextSeat(this.#match, this.#match.currentPlayer);
     this.#events.emit('turn:playerSwitched', { to: this.#match.currentPlayer });
+    this.#resetStrikerForTurn();
   }
 
   #transition(to: TurnState): void {

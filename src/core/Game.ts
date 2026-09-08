@@ -16,6 +16,9 @@ import { PocketManager } from '../gameplay/PocketManager';
 import { Notifications } from '../ui/Notifications';
 import { AudioManager } from '../audio/AudioManager';
 import { SoundToggle } from '../ui/SoundToggle';
+import { GameHUD, SEAT_ACCENTS, type SeatConfig } from '../ui/GameHUD';
+import { PlayerSide } from './PlayerSide';
+import { GameMode, PlayerSlot } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
@@ -52,6 +55,7 @@ export class Game {
   readonly #notifications: Notifications;
   readonly #audio: AudioManager;
   readonly #soundToggle: SoundToggle;
+  readonly #hud: GameHUD;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
 
@@ -101,6 +105,7 @@ export class Game {
     this.#audio = new AudioManager(this.events);
     this.#soundToggle = new SoundToggle(container, this.#audio);
 
+    this.#hud = new GameHUD(container, this.events);
     this.#notifications = new Notifications(container);
     this.events.on('ui:notify', ({ message, tone }) =>
       this.#notifications.show(message, tone),
@@ -175,6 +180,25 @@ export class Game {
     return this.#audio;
   }
 
+  get hud(): GameHUD {
+    return this.#hud;
+  }
+
+  /**
+   * Start a match in a given mode.
+   *
+   * Seats are data: the mode picks which edges are occupied and in what order,
+   * and everything downstream — turn passing, striker placement, the HUD —
+   * reads that rather than branching on the mode.
+   */
+  setMode(mode: GameMode): void {
+    const seats = SEAT_LAYOUTS[mode];
+    this.#turns.configureSeats(mode, seats);
+    this.#hud.setSeats(seats);
+    this.#hud.bind(this.#turns.match);
+    this.resetBoard();
+  }
+
   get input(): InputManager {
     return this.#input;
   }
@@ -186,6 +210,7 @@ export class Game {
     this.#turns.reset();
     this.#notifications.setBanner(null);
     this.#input.resetStriker();
+    this.#hud.bind(this.#turns.match);
   }
 
   get loop(): GameLoop {
@@ -194,6 +219,8 @@ export class Game {
 
   start(): void {
     if (this.#disposed) throw new Error('Game has been disposed');
+    // Two-player local is the default until the main menu lands.
+    this.setMode(GameMode.LocalMultiplayer);
     this.#turns.start();
     this.#loop.start();
     this.events.emit('game:ready');
@@ -293,6 +320,7 @@ export class Game {
     this.#cameraTuner = undefined;
 
     window.removeEventListener('keydown', this.#onDebugKey);
+    this.#hud.dispose();
     this.#soundToggle.dispose();
     this.#audio.dispose();
     this.#notifications.dispose();
@@ -308,3 +336,28 @@ export class Game {
     this.#canvas.remove();
   }
 }
+
+/**
+ * Which seats each mode uses.
+ *
+ * Four-player order runs clockwise from the bottom, so play passes to the
+ * person physically next to you — the same way it goes round a real board.
+ * Names are placeholders until a profile system exists.
+ */
+const SEAT_LAYOUTS: Record<GameMode, readonly SeatConfig[]> = {
+  [GameMode.QuickMatch]: [
+    { slot: PlayerSlot.One, side: PlayerSide.Bottom, name: 'You', initials: 'YO', accent: SEAT_ACCENTS.bottom },
+    { slot: PlayerSlot.Two, side: PlayerSide.Top, name: 'Computer', initials: 'AI', accent: SEAT_ACCENTS.top },
+  ],
+  [GameMode.LocalMultiplayer]: [
+    { slot: PlayerSlot.One, side: PlayerSide.Bottom, name: 'Player 1', initials: 'P1', accent: SEAT_ACCENTS.bottom },
+    { slot: PlayerSlot.Two, side: PlayerSide.Top, name: 'Player 2', initials: 'P2', accent: SEAT_ACCENTS.top },
+  ],
+  [GameMode.Practice]: [
+    { slot: PlayerSlot.One, side: PlayerSide.Bottom, name: 'Practice', initials: 'PR', accent: SEAT_ACCENTS.bottom },
+  ],
+  [GameMode.Career]: [
+    { slot: PlayerSlot.One, side: PlayerSide.Bottom, name: 'You', initials: 'YO', accent: SEAT_ACCENTS.bottom },
+    { slot: PlayerSlot.Two, side: PlayerSide.Top, name: 'Opponent', initials: 'OP', accent: SEAT_ACCENTS.top },
+  ],
+};

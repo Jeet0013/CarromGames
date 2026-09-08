@@ -17,7 +17,8 @@
 
 import * as THREE from 'three';
 
-import { BOARD_CONFIG, baselineZ, clampToBaseline } from '../board/BoardConfig';
+import { BOARD_CONFIG } from '../board/BoardConfig';
+import { clampToBaseline, isForwardShot, strikerHome } from '../core/PlayerSide';
 import type { EventBus } from '../core/EventBus';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import type { PieceFactory } from '../pieces/PieceFactory';
@@ -92,14 +93,10 @@ export class InputManager {
     return this.#profile;
   }
 
-  /** Put the striker back on the current player's baseline. */
+  /** Put the striker at the centre of the active seat's baseline. */
   resetStriker(): void {
-    const z = baselineZ(this.#turns.currentPlayer);
-    const x = clampToBaseline(
-      this.#pieces.striker.position.x,
-      PIECE_GEOMETRY.striker.radius,
-    );
-    this.#physics.setPosition('striker', x, z);
+    const home = strikerHome(this.#turns.currentSide);
+    this.#physics.setPosition('striker', home.x, home.z);
   }
 
   /** Screen point → board point, or null if the ray misses the play plane. */
@@ -176,15 +173,18 @@ export class InputManager {
   }
 
   /**
-   * Slide the striker along the baseline.
-   *
-   * Only X is taken from the pointer; Z is pinned to the baseline and X is
-   * clamped by `clampToBaseline`, so illegal placement is unrepresentable
-   * rather than merely rejected afterwards.
+   * Slide the striker along the active seat's baseline.
    */
   #moveStriker(point: BoardPoint): void {
-    const x = clampToBaseline(point.x, PIECE_GEOMETRY.striker.radius);
-    this.#physics.setPosition('striker', x, baselineZ(this.#turns.currentPlayer));
+    // Whichever edge the active seat sits at, the free axis is clamped to the
+    // baseline span and the fixed axis is pinned — so illegal placement is
+    // unrepresentable rather than corrected afterwards.
+    const at = clampToBaseline(
+      this.#turns.currentSide,
+      point,
+      PIECE_GEOMETRY.striker.radius,
+    );
+    this.#physics.setPosition('striker', at.x, at.z);
   }
 
   /** Direction and power from the current pull. */
@@ -235,6 +235,14 @@ export class InputManager {
 
     const { direction, power } = this.#computeShot(pointer);
     if (power <= 0) {
+      this.#turns.cancelAiming();
+      return;
+    }
+
+    // Reject a shot aimed backwards off the player's own edge. The drag reads
+    // identically from every seat — pull toward yourself, fire toward the
+    // centre — so this is the one thing that has to know where the seat sits.
+    if (!isForwardShot(this.#turns.currentSide, direction)) {
       this.#turns.cancelAiming();
       return;
     }

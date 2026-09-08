@@ -16,7 +16,7 @@
  */
 
 import type { MatchState } from '../core/GameState';
-import { assignColors, opponentOf } from '../core/GameState';
+import { assignColors, nextSeat, opponentOf } from '../core/GameState';
 import { FoulManager, type Penalty } from './FoulManager';
 import { QueenManager } from './QueenManager';
 import { CLASSIC_CASUAL, type RuleSet } from './RuleSet';
@@ -233,7 +233,9 @@ export class RuleEngine {
     state.winner = decision.winner;
 
     if (!decision.continueTurn && decision.winner === null) {
-      state.currentPlayer = opponentOf(outcome.by);
+      // Turn order comes from `seatOrder`, so this is already correct for four
+      // players; two-player reduces to alternating.
+      state.currentPlayer = nextSeat(state, outcome.by);
     }
   }
 }

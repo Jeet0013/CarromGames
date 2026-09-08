@@ -6,10 +6,13 @@
  * build ship this struct over the wire.
  */
 
-import { CoinColor, PlayerSlot, QueenState } from './types';
+import { PlayerSide } from './PlayerSide';
+import { CoinColor, GameMode, PlayerSlot, QueenState } from './types';
 
 export interface PlayerState {
   readonly slot: PlayerSlot;
+  /** Which edge of the board this seat shoots from. */
+  side: PlayerSide;
   /** Null until the first valid pocket assigns colours. */
   color: CoinColor | null;
   /** Own coins pocketed and kept. */
@@ -24,6 +27,9 @@ export interface PlayerState {
 }
 
 export interface MatchState {
+  mode: GameMode;
+  /** Seats in play, in turn order. Two entries for 2P, four for 4P. */
+  seatOrder: PlayerSlot[];
   currentPlayer: PlayerSlot;
   readonly players: Record<PlayerSlot, PlayerState>;
 
@@ -42,12 +48,17 @@ export interface MatchState {
 
 export const COINS_PER_COLOR = 9;
 
-export function createMatchState(starting: PlayerSlot = PlayerSlot.One): MatchState {
+export function createMatchState(
+  mode: GameMode = GameMode.LocalMultiplayer,
+  starting: PlayerSlot = PlayerSlot.One,
+): MatchState {
   return {
+    mode,
+    seatOrder: [PlayerSlot.One, PlayerSlot.Two],
     currentPlayer: starting,
     players: {
-      [PlayerSlot.One]: newPlayer(PlayerSlot.One),
-      [PlayerSlot.Two]: newPlayer(PlayerSlot.Two),
+      [PlayerSlot.One]: newPlayer(PlayerSlot.One, PlayerSide.Bottom),
+      [PlayerSlot.Two]: newPlayer(PlayerSlot.Two, PlayerSide.Top),
     },
     coinsOnBoard: {
       [CoinColor.White]: COINS_PER_COLOR,
@@ -61,9 +72,10 @@ export function createMatchState(starting: PlayerSlot = PlayerSlot.One): MatchSt
   };
 }
 
-function newPlayer(slot: PlayerSlot): PlayerState {
+function newPlayer(slot: PlayerSlot, side: PlayerSide): PlayerState {
   return {
     slot,
+    side,
     color: null,
     coinsPocketed: 0,
     penaltyDebt: 0,
@@ -74,6 +86,23 @@ function newPlayer(slot: PlayerSlot): PlayerState {
 
 export const opponentOf = (slot: PlayerSlot): PlayerSlot =>
   slot === PlayerSlot.One ? PlayerSlot.Two : PlayerSlot.One;
+
+/**
+ * The seat that plays after this one.
+ *
+ * Reads `seatOrder` rather than assuming two players, so the same turn logic
+ * carries four-player without a branch.
+ */
+export function nextSeat(state: MatchState, from: PlayerSlot): PlayerSlot {
+  const order = state.seatOrder;
+  const index = order.indexOf(from);
+  if (index < 0) return order[0] ?? from;
+  return order[(index + 1) % order.length] ?? from;
+}
+
+/** Which edge a seat shoots from. */
+export const sideOf = (state: MatchState, slot: PlayerSlot): PlayerSide =>
+  state.players[slot].side;
 
 /** The colour a seat owns, or null while colours are unassigned. */
 export const colorOf = (state: MatchState, slot: PlayerSlot): CoinColor | null =>

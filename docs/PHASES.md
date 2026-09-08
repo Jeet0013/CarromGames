@@ -23,7 +23,7 @@ giving 14 phases. Content is unchanged — only the grouping.
 | 6 | Pocket detection | ✅ Done | Corner sensors, removal, events |
 | 7 | Game rules | ✅ Done | `RuleEngine`, `TurnManager`, fouls |
 | 8 | Queen logic | ✅ Done | Folded into Phase 7 — `QueenManager`, cover, return, banner |
-| 9 | AI | ⬜ Next | Planner, scorer, difficulty tiers |
+| 9 | AI | ⬜ Not started | Planner, scorer, difficulty tiers |
 | 10 | UI | ⬜ Not started | All 11 screens, HUD |
 | 11 | Career levels | ⬜ Not started | 30 data-driven levels, challenges |
 | 12 | Audio and effects | ⬜ Not started | SFX, music, particles |
@@ -120,3 +120,4 @@ limitations, recommended next phase.
 - Phase 5 — [`reports/phase-05.md`](./reports/phase-05.md)
 - Phase 6 — [`reports/phase-06.md`](./reports/phase-06.md)
 - Phase 7 — [`reports/phase-07.md`](./reports/phase-07.md) (includes Queen logic)
+- Phase 8 — [`reports/phase-08.md`](./reports/phase-08.md) (two-player mode)
