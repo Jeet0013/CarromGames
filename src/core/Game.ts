@@ -144,6 +144,9 @@ export class Game {
     );
 
     this.events.on('rules:gameComplete', ({ winner }) => this.#showResult(winner));
+
+    // Turn the board toward whoever plays next.
+    this.events.on('turn:playerSwitched', () => this.#faceActivePlayer());
     this.#turns = new TurnManager(
       this.events,
       this.#physics,
@@ -304,6 +307,8 @@ export class Game {
     this.#hud.setSeats(seats);
     this.#hud.bind(this.#turns.match);
     this.resetBoard();
+    // Snap on entry; later turns swing.
+    this.#faceActivePlayer(true);
   }
 
   /** Announce the result in the winner's own terms. */
@@ -363,6 +368,30 @@ export class Game {
    * gets its panel moved to the bottom. No game state changes: the world is
    * identical on both machines, only the viewpoint differs.
    */
+  /**
+   * Rotate the board so the active player's edge is nearest the screen.
+   *
+   * Only one person plays at a time, and asking three of four players to shoot
+   * "upwards" at a striker on the far rail is the single worst thing about
+   * hot-seat play on one device. Turning the board between turns costs nothing
+   * — the world is untouched, only the viewpoint moves — and the swing itself
+   * tells the next player the device is now theirs.
+   *
+   * Input needs no adjustment: it is ray-cast into world space, so dragging
+   * toward yourself always sends the striker away from you, whatever the
+   * camera angle.
+   */
+  #faceActivePlayer(snap = false): void {
+    if (this.#turns.match.mode !== GameMode.FourPlayer) return;
+    const azimuth = {
+      [PlayerSide.Bottom]: 0,
+      [PlayerSide.Right]: 90,
+      [PlayerSide.Top]: 180,
+      [PlayerSide.Left]: 270,
+    }[this.#turns.currentSide];
+    this.#camera.setAzimuthDegrees(azimuth, snap);
+  }
+
   #applyLocalSeatView(): void {
     const guest = this.#net.role === 'guest';
     this.#camera.setAzimuthDegrees(guest ? 180 : 0);
@@ -515,8 +544,9 @@ export class Game {
     // keeps sending shots into a match that no longer exists.
     if (this.#net.isOnline) {
       this.#net.disconnect();
-      this.#camera.setAzimuthDegrees(0);
+      this.#camera.setAzimuthDegrees(0, true);
     }
+    this.#camera.setAzimuthDegrees(0, true);
     // Playing the computer needs a difficulty before a match can begin.
     if (mode === GameMode.QuickMatch) {
       this.#menu.hide();

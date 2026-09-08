@@ -42,6 +42,16 @@ export class GameHUD {
   readonly #unsubscribes: Array<() => void> = [];
   #seats: readonly SeatConfig[] = [];
   #narrow = false;
+  /**
+   * Show only the active seat's panel.
+   *
+   * With four players, only one is ever playing, so four simultaneous panels
+   * are three pieces of furniture competing with the board for a phone screen.
+   * Showing just the player whose turn it is frees the whole layout — and with
+   * the board rotated to face them, the single panel belongs at the bottom
+   * where that player is sitting.
+   */
+  #activeOnly = false;
 
   constructor(container: HTMLElement, events: EventBus) {
     this.#container = container;
@@ -73,16 +83,16 @@ export class GameHUD {
      * two on top, two below — with the pairing kept as close to the seating as
      * the space allows.
      */
-    const crowded = seats.length > 2 && this.#narrow;
+    this.#activeOnly = seats.length > 2;
 
-    const CORNERS: Record<number, readonly string[]> = {
-      0: ['top:max(14px, env(safe-area-inset-top))', 'left:68px'],
-      1: ['top:max(14px, env(safe-area-inset-top))', 'left:160px'],
-      2: ['bottom:max(64px, calc(env(safe-area-inset-bottom) + 58px))', 'left:14px'],
-      3: ['bottom:max(64px, calc(env(safe-area-inset-bottom) + 58px))', 'left:112px'],
-    };
+    // One panel, bottom-left, because the board is turned so the active player
+    // is sitting there.
+    const soloAnchor = [
+      'bottom:max(64px, calc(env(safe-area-inset-bottom) + 58px))',
+      'left:max(14px, env(safe-area-inset-left))',
+    ];
 
-    seats.forEach((seat, index) => {
+    seats.forEach((seat) => {
       this.#panels.set(
         seat.slot,
         new PlayerPanel(this.#container, {
@@ -90,7 +100,7 @@ export class GameHUD {
           initials: seat.initials,
           side: seat.side,
           accent: seat.accent,
-          ...(crowded ? { anchor: CORNERS[index] ?? CORNERS[0], compact: true } : {}),
+          ...(this.#activeOnly ? { anchor: soloAnchor } : {}),
         }),
       );
     });
@@ -123,6 +133,9 @@ export class GameHUD {
   sync(match: MatchState): void {
     for (const seat of this.#seats) {
       const player = match.players[seat.slot];
+      const isActive = match.currentPlayer === seat.slot;
+      // Everyone but the player on turn is hidden entirely.
+      if (this.#activeOnly) this.#panels.get(seat.slot)?.setVisible(isActive);
       this.#panels.get(seat.slot)?.update({
         score: player.coinsPocketed,
         coinsPocketed: player.coinsPocketed,
