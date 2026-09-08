@@ -28,6 +28,7 @@ import { PocketEffect } from '../effects/PocketEffect';
 import { VictoryScreen } from '../ui/VictoryScreen';
 import { PowderEffect } from '../effects/PowderEffect';
 import { PowderCan } from '../ui/PowderCan';
+import { CinematicCameraManager } from '../camera/CinematicCameraManager';
 import { PlayerSide } from './PlayerSide';
 import { GameMode, PlayerSlot } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
@@ -77,6 +78,7 @@ export class Game {
   readonly #victory: VictoryScreen;
   readonly #powder: PowderEffect;
   readonly #powderCan: PowderCan;
+  readonly #cinematic: CinematicCameraManager;
   #lastMode: GameMode = GameMode.LocalMultiplayer;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
@@ -120,6 +122,9 @@ export class Game {
     // Confirmation lands where the player is already looking — at the pocket.
     this.#pocketEffect = new PocketEffect();
     this.#scene.addPermanent(this.#pocketEffect.group);
+
+    // Supplies camera offsets only; CameraManager keeps ownership of position.
+    this.#cinematic = new CinematicCameraManager(this.events, this.#camera, this.#pieces);
 
     this.#powder = new PowderEffect();
     this.#scene.addPermanent(this.#powder.group);
@@ -297,6 +302,10 @@ export class Game {
     return this.#ai;
   }
 
+  get cinematic(): CinematicCameraManager {
+    return this.#cinematic;
+  }
+
   /** Start a match against the computer at the chosen difficulty. */
   #startVsComputer(difficulty: AIDifficulty): void {
     this.#difficultySelect.hide();
@@ -397,8 +406,10 @@ export class Game {
   }
 
   #render(_alpha: number, frameDelta: number): void {
-    // Camera easing runs on the real frame delta, not the fixed step — it is
+    // Both run on the real frame delta, not the fixed step — they are
     // presentation, and must take the same wall-clock time at any frame rate.
+    // Cinematic first: it writes the offsets the camera then applies.
+    this.#cinematic.update(frameDelta);
     this.#camera.update(frameDelta);
     // Positions are copied from the simulation once per frame rather than once
     // per fixed step: several steps can run in one frame, and only the last
