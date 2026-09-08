@@ -60,14 +60,19 @@ export const CINEMATIC_SETTINGS = {
    * widescreen monitor, while a fixed 2.3 units was a barely-visible nudge from
    * 18 units out.
    *
-   * 2.4× is the tuned value. 4× was tried and measured worse on both counts
-   * that matter: the striker fell out of frame on 7–9 of 61 sampled frames,
-   * and per-frame camera movement rose to 0.89 units against 0.17 at rest —
-   * the camera has to cross ~13 units inside a 1.5 s shot, and that is a lurch
-   * however it is eased. At 2.4× the strike still reads as an event, the
-   * striker stays framed throughout, and the motion stays smooth.
+   * Tuned down twice on the owner's judgement. 4× was tried first and measured
+   * worse on both counts that matter: the striker fell out of frame on 7–9 of
+   * 61 sampled frames, and per-frame camera movement reached 0.89 units against
+   * 0.17 at rest — the camera had to cross ~13 units inside a 1.5 s shot, which
+   * is a lurch however it is eased. 2.4× fixed the framing but still read as
+   * too much travel.
+   *
+   * 1.45× halves the push distance again (≈5.2 units rather than 10.5). The
+   * strike still gains depth and momentum, but the board never stops being
+   * readable — which on a shot the player is about to be judged on matters more
+   * than the drama does.
    */
-  zoomFactor: 2.4,
+  zoomFactor: 1.45,
   /**
    * Ceiling on how far the look-at point may leave the board centre.
    *
