@@ -65,7 +65,18 @@ const body = /<div id="app">([\s\S]*?)<\/div>\s*<script/.exec(source)?.[1] ?? ''
 // `</script>` inside the bundle would close the tag early and break the page.
 const safeScript = script.replace(/<\/script>/gi, '<\\/script>');
 
-const html = `<title>${title}</title>
+// Inline the favicon as a data URI. The host supplies the <head>, so a
+// `<link href="/favicon.svg">` would not resolve — and without any icon the
+// browser falls back to requesting /favicon.ico and logging a 404.
+let favicon = '';
+try {
+  const svg = await readFile('public/favicon.svg', 'utf8');
+  favicon = `<link rel="icon" href="data:image/svg+xml,${encodeURIComponent(svg)}">\n`;
+} catch {
+  // No favicon on disk; the page is still valid without one.
+}
+
+const html = `${favicon}<title>${title}</title>
 <style>
 /* The host resets body margin but not overflow; the board owns the viewport. */
 html, body { height: 100%; overflow: hidden; }
