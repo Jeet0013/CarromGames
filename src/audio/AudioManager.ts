@@ -286,61 +286,145 @@ export class AudioManager {
    * drift if the tab is throttled; a buffer loops in the audio thread and costs
    * nothing to keep playing.
    *
-   * The line is built on a five-note scale rather than a major key — Carrom is
-   * an Indian game, and a pentatonic figure over a drone is both the honest
-   * reference and, practically, the shape that survives looping without
-   * becoming tiresome. A major-key hook would wear out in three passes.
+   * The first version was a slow pluck over a drone: pleasant, but it set a
+   * contemplative tone for a game about flicking discs across a board at speed.
+   * This is built like a track instead — a kick and tabla-style pulse, a bass
+   * on every beat, a shaker driving the eighths and a sixteenth-note figure
+   * over the top at 116 BPM. The energy comes from the *rate* of events rather
+   * than from volume, which is what keeps it lifting without becoming tiring.
+   *
+   * The harmony stays minor-modal and the line pentatonic: Carrom is an Indian
+   * game, so that is the honest reference, and a minor mode drives where a
+   * major key would turn saccharine over a loop.
    */
   #buildMenuLoop(context: AudioContext): AudioBuffer {
     const rate = context.sampleRate;
-    const seconds = 16;
+    const bpm = 116;
+    const beat = 60 / bpm;
+    const bars = 4;
+    const seconds = beat * 4 * bars;
     const length = Math.floor(rate * seconds);
+
     const buffer = context.createBuffer(2, length, rate);
     const left = buffer.getChannelData(0);
     const right = buffer.getChannelData(1);
 
-    const root = 146.83; // D3
-    // Scale degrees of a warm pentatonic, as frequency ratios from the root.
-    const scale = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2, 9 / 4, 5 / 2];
+    /** Write a sample into both channels with a stereo bias. */
+    const add = (index: number, value: number, pan = 0.5): void => {
+      if (index < 0 || index >= length) return;
+      left[index] = (left[index] ?? 0) + value * pan;
+      right[index] = (right[index] ?? 0) + value * (1 - pan);
+    };
 
-    // Drone: root and fifth, very slow shimmer so it breathes.
-    for (let i = 0; i < length; i += 1) {
-      const time = i / rate;
-      const shimmer = 0.5 + 0.5 * Math.sin(2 * Math.PI * 0.05 * time);
-      const drone =
-        Math.sin(2 * Math.PI * root * 0.5 * time) * 0.055 +
-        Math.sin(2 * Math.PI * root * 0.75 * time) * 0.035;
-      const value = drone * (0.6 + 0.4 * shimmer);
-      left[i] = value;
-      right[i] = value;
+    /** A struck, decaying tone with a little harmonic bite. */
+    const pluck = (at: number, freq: number, gain: number, decay: number, pan = 0.5): void => {
+      const start = Math.floor(at * rate);
+      const samples = Math.floor(decay * 3 * rate);
+      for (let i = 0; i < samples; i += 1) {
+        const time = i / rate;
+        const env = Math.exp(-time / decay);
+        const value =
+          (Math.sin(2 * Math.PI * freq * time) +
+            // The upper partials die fastest, which is what makes it read as
+            // plucked rather than blown.
+            0.45 * Math.exp(-time * 9) * Math.sin(2 * Math.PI * freq * 2 * time) +
+            0.22 * Math.exp(-time * 16) * Math.sin(2 * Math.PI * freq * 3 * time)) *
+          env *
+          gain;
+        add(start + i, value, pan);
+      }
+    };
+
+    /** Kick: a pitch sweep, which is what gives a drum its thump. */
+    const kick = (at: number, gain = 0.5): void => {
+      const start = Math.floor(at * rate);
+      const samples = Math.floor(0.28 * rate);
+      for (let i = 0; i < samples; i += 1) {
+        const time = i / rate;
+        const freq = 46 + 105 * Math.exp(-time * 34);
+        const env = Math.exp(-time * 11);
+        add(start + i, Math.sin(2 * Math.PI * freq * time) * env * gain, 0.5);
+      }
+    };
+
+    /** Tabla-like tap: a short pitched ring over a noise click. */
+    const tap = (at: number, freq: number, gain: number, pan: number): void => {
+      const start = Math.floor(at * rate);
+      const samples = Math.floor(0.16 * rate);
+      for (let i = 0; i < samples; i += 1) {
+        const time = i / rate;
+        const env = Math.exp(-time * 26);
+        const body = Math.sin(2 * Math.PI * freq * time) * env;
+        const click = (Math.random() * 2 - 1) * Math.exp(-time * 190) * 0.5;
+        add(start + i, (body + click) * gain, pan);
+      }
+    };
+
+    /** Shaker: filtered noise, very short — this is the part that drives. */
+    const shaker = (at: number, gain: number, pan: number): void => {
+      const start = Math.floor(at * rate);
+      const samples = Math.floor(0.07 * rate);
+      let previous = 0;
+      for (let i = 0; i < samples; i += 1) {
+        const time = i / rate;
+        const noise = Math.random() * 2 - 1;
+        // Crude high-pass: subtracting the running value keeps only the hiss.
+        const filtered = noise - previous;
+        previous = noise * 0.5 + previous * 0.5;
+        add(start + i, filtered * Math.exp(-time * 62) * gain, pan);
+      }
+    };
+
+    // ── Harmony ───────────────────────────────────────────────────────────
+    // A minor-modal progression: darker and more driving than a major key, and
+    // it keeps the pentatonic line from sounding like a lullaby.
+    const root = 146.83; // D3
+    const chordRoots = [1, 1.4983, 1.3348, 0.8909]; // D, A, G, C
+    const scale = [1, 1.1225, 1.3348, 1.4983, 1.6818, 2, 2.245, 2.6697];
+
+    for (let bar = 0; bar < bars; bar += 1) {
+      const barStart = bar * beat * 4;
+      const chord = chordRoots[bar] ?? 1;
+
+      // Bass on every beat, driving the pulse.
+      for (let b = 0; b < 4; b += 1) {
+        pluck(barStart + b * beat, root * chord * 0.5, 0.2, 0.18, 0.5);
+      }
+
+      // Drums: kick on 1 and 3, taps on the off-beats, shaker on every eighth.
+      for (let step = 0; step < 8; step += 1) {
+        const at = barStart + step * (beat / 2);
+        if (step === 0 || step === 4) kick(at, 0.55);
+        if (step === 2 || step === 6) tap(at, 320, 0.3, 0.42);
+        if (step % 2 === 1) tap(at, 620, 0.12, 0.6);
+        shaker(at, step % 2 === 0 ? 0.1 : 0.055, step % 2 === 0 ? 0.35 : 0.65);
+      }
+
+      // Sixteenth-note melodic figure — the energy comes from the rate.
+      const figure = [0, 2, 4, 5, 4, 2, 3, 1, 0, 2, 4, 7, 5, 4, 2, 0];
+      for (let i = 0; i < 16; i += 1) {
+        const degree = figure[(i + bar * 3) % figure.length] ?? 0;
+        const at = barStart + i * (beat / 4);
+        // Accent the downbeats so the run has shape rather than being a blur.
+        const accent = i % 4 === 0 ? 0.115 : 0.062;
+        pluck(at, root * chord * (scale[degree] ?? 1), accent, 0.1, i % 2 ? 0.62 : 0.38);
+      }
     }
 
-    // Plucked figure over the top. Each note is a decaying sine stack, which
-    // is a cheap and convincing santoor-like pluck.
-    const pattern = [0, 2, 4, 3, 5, 4, 2, 1, 0, 3, 5, 6, 5, 3, 2, 0];
-    const noteSeconds = seconds / pattern.length;
-
-    pattern.forEach((degree, index) => {
-      const frequency = root * (scale[degree] ?? 1);
-      const start = Math.floor(index * noteSeconds * rate);
-      const duration = Math.floor(noteSeconds * 2.4 * rate);
-      // Alternate the stereo placement so the figure has width.
-      const pan = index % 2 === 0 ? 0.62 : 0.38;
-
-      for (let i = 0; i < duration && start + i < length; i += 1) {
-        const time = i / rate;
-        // Plucks decay fast; the harmonic decays faster still, which is what
-        // makes the attack read as struck rather than blown.
-        const envelope = Math.exp(-time * 2.6);
-        const sample =
-          (Math.sin(2 * Math.PI * frequency * time) +
-            Math.sin(2 * Math.PI * frequency * 2 * time) * 0.32 * Math.exp(-time * 5)) *
-          envelope *
-          0.09;
-        left[start + i] = (left[start + i] ?? 0) + sample * pan;
-        right[start + i] = (right[start + i] ?? 0) + sample * (1 - pan);
-      }
-    });
+    /*
+     * Soft limiting, driven hard.
+     *
+     * The first pass measured an RMS of 0.057 against a 0.438 peak — a crest
+     * factor near 8, meaning the loop was mostly silence between transients and
+     * would read as thin however far the volume was turned up. Driving into
+     * tanh lifts the *average* level, which is what energy actually is, while
+     * the curve keeps the peaks from clipping — a clipped loop sounds broken,
+     * not loud.
+     */
+    for (let i = 0; i < length; i += 1) {
+      left[i] = Math.tanh((left[i] ?? 0) * 2.6) * 0.9;
+      right[i] = Math.tanh((right[i] ?? 0) * 2.6) * 0.9;
+    }
 
     return buffer;
   }
@@ -358,7 +442,7 @@ export class AudioManager {
     const gain = context.createGain();
     // Fade in: music that arrives at full level reads as a jingle, not a theme.
     gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.5, context.currentTime + 1.2);
+    gain.gain.exponentialRampToValueAtTime(0.62, context.currentTime + 0.9);
     gain.connect(this.#master);
 
     const source = context.createBufferSource();
