@@ -7,6 +7,8 @@
  * room as often as not.
  */
 
+import { ScreenGate } from './ScreenGate';
+
 export type LobbyMode = 'hosting' | 'joining';
 
 export class OnlineLobby {
@@ -17,6 +19,8 @@ export class OnlineLobby {
   readonly #linkText: HTMLElement;
   readonly #copy: HTMLButtonElement;
   readonly #code: HTMLElement;
+  /** Ignores the click left behind by the tap that opened this screen. */
+  readonly #gate = new ScreenGate();
   #visible = false;
   #link = '';
 
@@ -93,6 +97,7 @@ export class OnlineLobby {
     ].join(';');
     this.#copy.addEventListener('click', (event) => {
       event.stopPropagation();
+      if (this.#gate.blocked(event)) return;
       void this.#copyLink();
     });
 
@@ -121,6 +126,7 @@ export class OnlineLobby {
     ].join(';');
     cancel.addEventListener('click', (event) => {
       event.stopPropagation();
+      if (this.#gate.blocked(event)) return;
       onCancel();
     });
 
@@ -154,6 +160,7 @@ export class OnlineLobby {
 
   showHosting(link: string, code: string): void {
     this.#visible = true;
+    this.#gate.open();
     this.#link = link;
     this.#title.textContent = 'Invite a player';
     this.#status.textContent =
@@ -166,6 +173,7 @@ export class OnlineLobby {
 
   showJoining(): void {
     this.#visible = true;
+    this.#gate.open();
     this.#title.textContent = 'Joining game';
     this.#status.textContent = 'Connecting to the other player…';
     this.#linkBox.style.display = 'none';

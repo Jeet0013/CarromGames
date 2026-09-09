@@ -8,9 +8,12 @@
  */
 
 import { AIDifficulty, DIFFICULTY_INFO, DIFFICULTY_ORDER } from '../ai/AIDifficulty';
+import { ScreenGate } from './ScreenGate';
 
 export class DifficultySelect {
   readonly #root: HTMLElement;
+  /** Ignores the click left behind by the tap that opened this screen. */
+  readonly #gate = new ScreenGate();
   #visible = false;
 
   constructor(
@@ -83,6 +86,7 @@ export class DifficultySelect {
     ].join(';');
     back.addEventListener('click', (event) => {
       event.stopPropagation();
+      if (this.#gate.blocked(event)) return;
       onBack();
     });
 
@@ -183,6 +187,7 @@ export class DifficultySelect {
     card.addEventListener('pointerleave', rest);
     card.addEventListener('click', (event) => {
       event.stopPropagation();
+      if (this.#gate.blocked(event)) return;
       rest();
       onSelect(difficulty);
     });
@@ -196,6 +201,7 @@ export class DifficultySelect {
 
   show(): void {
     this.#visible = true;
+    this.#gate.open();
     this.#root.style.display = 'flex';
   }
 
