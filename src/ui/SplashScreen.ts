@@ -153,20 +153,29 @@ export class SplashScreen {
       onStart();
     });
 
-    // The rest of the gesture dies here rather than on the menu underneath.
+    /*
+     * The rest of the gesture dies here rather than on the menu underneath.
+     *
+     * Absorbing and standing down happen in the *same* handler deliberately.
+     * They were two listeners on this element, one stopping propagation and a
+     * later one hiding — which only works if a stopped event still reaches the
+     * other listeners on its own target. Implementations disagree about that,
+     * and where it does not hold the shield never learns the tap is over and
+     * sits invisibly across the menu until its timer expires. A dead half
+     * second where nothing responds is exactly the fault this screen exists to
+     * prevent, so nothing here depends on listener ordering.
+     */
     const swallow = (event: Event): void => {
       if (!this.#dismissed) return;
       event.preventDefault();
       event.stopPropagation();
+      // The click is the last event of a tap. Once it has been absorbed the
+      // shield has done its job and must get out of the way.
+      if (event.type === 'click') this.hide();
     };
     for (const type of ['pointerup', 'mousedown', 'mouseup', 'touchend', 'click']) {
       this.#root.addEventListener(type, swallow, { capture: true });
     }
-    // Once the click has been absorbed the tap is over; no need to wait out
-    // the timer with an invisible sheet blocking the menu.
-    this.#root.addEventListener('click', () => {
-      if (this.#dismissed) this.hide();
-    });
 
     container.append(this.#root);
   }
