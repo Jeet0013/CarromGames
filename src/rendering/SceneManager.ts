@@ -8,8 +8,14 @@
 
 import * as THREE from 'three';
 
-/** Backdrop colour — a dark, warm room tone that flatters varnished wood. */
-const BACKGROUND_COLOR = 0x12100e;
+/**
+ * Backdrop colour.
+ *
+ * Only ever seen for the frame or two before `Room`'s backdrop dome is
+ * mounted, and behind it thereafter. Matched to the dome's horizon value so
+ * the handover is invisible.
+ */
+const BACKGROUND_COLOR = 0x0d0b09;
 
 export class SceneManager {
   readonly #scene: THREE.Scene;
@@ -23,6 +29,18 @@ export class SceneManager {
 
   get scene(): THREE.Scene {
     return this.#scene;
+  }
+
+  /**
+   * Light every physical material from the baked room.
+   *
+   * `environmentIntensity` rather than a brighter bake: the same texture also
+   * feeds the backdrop's mood, and one exposed dial is easier to tune against
+   * the key light than a constant buried in the bake.
+   */
+  setEnvironment(texture: THREE.Texture | null, intensity = 1): void {
+    this.#scene.environment = texture;
+    this.#scene.environmentIntensity = intensity;
   }
 
   /**

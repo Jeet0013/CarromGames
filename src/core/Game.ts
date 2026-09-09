@@ -41,12 +41,14 @@ import { GameMode, PlayerSlot, TurnState } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
+import { Environment } from '../rendering/Environment';
 import { Lighting } from '../rendering/Lighting';
 import { Renderer } from '../rendering/Renderer';
+import { Room } from '../rendering/Room';
 import { SceneManager } from '../rendering/SceneManager';
 import { EventBus } from './EventBus';
 import { GameLoop } from './GameLoop';
-import type { QualityTier } from './types';
+import { QualityTier } from './types';
 
 export interface GameOptions {
   /** Element the canvas is mounted into. Sizing follows this element. */
@@ -63,6 +65,8 @@ export class Game {
   readonly #scene: SceneManager;
   readonly #camera: CameraManager;
   readonly #lighting: Lighting;
+  readonly #environment: Environment;
+  readonly #room: Room;
   readonly #loop: GameLoop;
   readonly #board: CarromBoard;
   readonly #physics: PhysicsWorld;
@@ -110,11 +114,26 @@ export class Game {
     this.#renderer = new Renderer({ canvas: this.#canvas, quality });
     this.#scene = new SceneManager();
     this.#camera = new CameraManager();
-    this.#lighting = new Lighting(quality);
+    // Image-based lighting, baked once from a room built in code. The low
+    // tier goes without: the bake is cheap but the per-fragment IBL lookup on
+    // every physical material is not, and that tier exists for GPUs that are
+    // already struggling.
+    this.#environment = new Environment();
+    const hasEnvironment = quality !== QualityTier.Low;
+    if (hasEnvironment) {
+      // Slightly under 1: the bake is authored bright so highlights have
+      // somewhere to roll off, and the key light is still the shaping light.
+      this.#scene.setEnvironment(this.#environment.build(this.#renderer.three), 0.85);
+    }
 
-    // Lights are permanent furniture — they must survive a board teardown
-    // between matches.
+    this.#lighting = new Lighting(quality, hasEnvironment);
+
+    // Lights and the room are permanent furniture — they must survive a board
+    // teardown between matches.
     this.#scene.addPermanent(this.#lighting.group);
+
+    this.#room = new Room(quality);
+    this.#scene.addPermanent(this.#room.group);
 
     // The board is content, not furniture: a level change tears it down and
     // rebuilds it, which is why it goes through `add` rather than `addPermanent`.
@@ -941,6 +960,8 @@ export class Game {
     this.#physicsDebug?.dispose();
     this.#physics.dispose();
     this.#board.dispose();
+    this.#room.dispose();
+    this.#environment.dispose();
     this.#lighting.dispose();
     this.#scene.dispose();
     this.#renderer.dispose();

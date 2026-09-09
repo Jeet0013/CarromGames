@@ -1,9 +1,20 @@
 /**
  * Lighting rig.
  *
- * Three lights, arranged like a tabletop under a warm room lamp: a key light
- * that casts the board's shadow, a cool fill to keep the shadow side readable,
- * and a hemisphere wash for ambient bounce.
+ * A key light that casts the board's shadow, a cool fill so the shadow side
+ * stays readable, and a much-reduced hemisphere wash.
+ *
+ * ## Why the fills are weaker than they look
+ *
+ * `scene.environment` (see `Environment.ts`) now supplies irradiance from
+ * every direction. A hemisphere light and an ambient light supply the same
+ * thing, less accurately. Left at their old strengths the three would stack,
+ * and the result of over-filling is not a brighter board but a flatter one:
+ * every surface tends towards the same value, contact shadows wash out, and
+ * the frame's rounded shoulder stops reading as round.
+ *
+ * So the ambient is nearly gone and the hemisphere is a third of what it was.
+ * The room does that work now, and does it with direction.
  */
 
 import * as THREE from 'three';
@@ -19,11 +30,20 @@ export const LIGHTING_SETTINGS = {
   /** Cool fill from the opposite side, so shadowed wood does not read as black. */
   fillColor: 0xbcd4ff,
   fillIntensity: 0.55,
-  /** Sky/ground wash standing in for room bounce. */
+  /**
+   * Sky/ground wash.
+   *
+   * Kept only for the low tier, which has no environment map, and as a gentle
+   * cool tint from above on the others. `Environment` is the real ambient.
+   */
   skyColor: 0xdce6ff,
   groundColor: 0x3a2a1c,
-  hemiIntensity: 0.7,
-  ambientIntensity: 0.25,
+  hemiIntensity: 0.24,
+  /** Enough to keep a fully occluded crevice off pure black, and no more. */
+  ambientIntensity: 0.05,
+  /** Restored on the low tier, where there is no environment to stand in. */
+  hemiIntensityNoEnvironment: 0.7,
+  ambientIntensityNoEnvironment: 0.25,
 } as const;
 
 export class Lighting {
@@ -33,7 +53,13 @@ export class Lighting {
   readonly #hemi: THREE.HemisphereLight;
   readonly #ambient: THREE.AmbientLight;
 
-  constructor(quality: QualityTier) {
+  /**
+   * @param hasEnvironment Whether `scene.environment` is supplying irradiance.
+   *   When it is not — the low tier — the hemisphere and ambient lights go
+   *   back to their old strengths, because they are then the only fill there
+   *   is and a board lit by one directional light is a board in a cave.
+   */
+  constructor(quality: QualityTier, hasEnvironment = true) {
     this.#group.name = 'Lighting';
 
     const boardHalf = BOARD_CONFIG.frame.outerSize / 2;
@@ -60,11 +86,18 @@ export class Lighting {
     this.#hemi = new THREE.HemisphereLight(
       LIGHTING_SETTINGS.skyColor,
       LIGHTING_SETTINGS.groundColor,
-      LIGHTING_SETTINGS.hemiIntensity,
+      hasEnvironment
+        ? LIGHTING_SETTINGS.hemiIntensity
+        : LIGHTING_SETTINGS.hemiIntensityNoEnvironment,
     );
     this.#hemi.position.set(0, boardHalf * 2, 0);
 
-    this.#ambient = new THREE.AmbientLight(0xffffff, LIGHTING_SETTINGS.ambientIntensity);
+    this.#ambient = new THREE.AmbientLight(
+      0xffffff,
+      hasEnvironment
+        ? LIGHTING_SETTINGS.ambientIntensity
+        : LIGHTING_SETTINGS.ambientIntensityNoEnvironment,
+    );
 
     this.#group.add(this.#key, this.#key.target, this.#fill, this.#hemi, this.#ambient);
   }
@@ -86,10 +119,13 @@ export class Lighting {
     const shadow = this.#key.shadow;
     shadow.mapSize.set(preset.shadowMapSize, preset.shadowMapSize);
 
-    // The shadow camera is fitted tightly to the board. An oversized frustum
-    // is the usual cause of blocky shadows: texels get spread over empty space
-    // instead of the surface where the coins actually sit.
-    const extent = boardHalf * 1.35;
+    // The shadow camera is fitted to the board plus the length of shadow it
+    // throws onto the table beside it. Tight is right — an oversized frustum
+    // spreads texels over empty space instead of the surface where the coins
+    // sit — but it was previously fitted to the board alone, from a key light
+    // offset on two axes, so the board's own shadow ran off the edge of the
+    // map and stopped mid-table. There was no table to notice it on before.
+    const extent = boardHalf * 1.9;
     const cam = shadow.camera;
     cam.left = -extent;
     cam.right = extent;
