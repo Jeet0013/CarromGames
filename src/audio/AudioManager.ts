@@ -17,6 +17,8 @@
  * into the rules.
  */
 
+import applauseUrl from '../assets/applause.mp3';
+import booUrl from '../assets/boo.mp3';
 import { PieceKind } from '../core/types';
 import type { EventBus } from '../core/EventBus';
 import { PHYSICS_CONFIG } from '../physics/PhysicsConfig';
@@ -308,6 +310,64 @@ export class AudioManager {
   }
 
   /** Record when a voice is scheduled to stop. */
+  /**
+   * Decoded sample cache.
+   *
+   * Both clips arrive as data URIs — the build inlines every asset so the
+   * single-file artifact stays self-contained — and are decoded once on first
+   * use. Decoding is async and cannot happen before the context exists, so the
+   * first play of each may be silent; every one after is immediate.
+   */
+  readonly #samples = new Map<string, AudioBuffer>();
+  readonly #decoding = new Set<string>();
+
+  #sample(context: AudioContext, url: string): AudioBuffer | undefined {
+    const cached = this.#samples.get(url);
+    if (cached) return cached;
+
+    if (!this.#decoding.has(url)) {
+      this.#decoding.add(url);
+      void fetch(url)
+        .then((response) => response.arrayBuffer())
+        .then((data) => context.decodeAudioData(data))
+        .then((buffer) => {
+          this.#samples.set(url, buffer);
+        })
+        .catch(() => {
+          // A clip that will not decode is not worth taking the game down for;
+          // the rest of the sound design carries on without it.
+        })
+        .finally(() => this.#decoding.delete(url));
+    }
+    return undefined;
+  }
+
+  /**
+   * Play a decoded clip, or nothing at all if it is not ready yet.
+   *
+   * @param level peak gain; these are recorded samples, so this is the only
+   *   shaping they need beyond the fade already baked into the file.
+   */
+  #playSample(url: string, level: number): boolean {
+    const context = this.#context;
+    if (!context || !this.#master) return false;
+
+    const buffer = this.#sample(context, url);
+    if (!buffer) return false;
+
+    const now = context.currentTime;
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+
+    const gain = context.createGain();
+    gain.gain.value = level;
+
+    source.connect(gain).connect(this.#master);
+    source.start(now);
+    this.#trackVoice(now + buffer.duration);
+    return true;
+  }
+
   #trackVoice(endsAt: number): void {
     this.#voiceEnds.push(endsAt);
   }
@@ -792,13 +852,24 @@ export class AudioManager {
     const context = this.#context;
     if (!context || !this.#master) return;
 
+    /*
+     * The recorded applause, when it has decoded.
+     *
+     * The synthesised crowd below is not dead code — it is what plays on the
+     * very first pocket of a session, before the clip has finished decoding,
+     * and it is what plays if the file ever fails to decode at all. A game
+     * that goes silent because an asset did not load is worse than one that
+     * falls back to something built from an oscillator.
+     */
+    if (this.#playSample(applauseUrl, 0.85)) {
+      this.#playChime(context, this.#master, context.currentTime);
+      return;
+    }
+
     // Captured locally: TypeScript cannot narrow a private field across the
     // closure below, and the field is optional until audio unlocks.
     const master = this.#master;
     const now = context.currentTime;
-    // Root, major third, fifth — a plain major triad, arpeggiated upward.
-    const notes = [523.25, 659.25, 783.99];
-
     // ── Crowd swell ───────────────────────────────────────────────────────
     this.#crowdBuffer ??= this.#buildCrowd(context);
     const crowd = context.createBufferSource();
@@ -833,8 +904,20 @@ export class AudioManager {
     // clap is a transient, and applause is a lot of transients at once.
     this.#playApplause(context, master, now);
 
-    // ── Chime ─────────────────────────────────────────────────────────────
-    notes.forEach((frequency, index) => {
+    this.#playChime(context, master, now);
+  }
+
+  /**
+   * A rising major triad over the applause.
+   *
+   * Kept when the recorded crowd took over: the clip says a lot of people
+   * approved, the chime says *you scored*, and they are different pieces of
+   * information. It is also the part that cuts through on a phone speaker,
+   * where a broadband crowd recording loses most of its body.
+   */
+  #playChime(context: AudioContext, master: AudioNode, now: number): void {
+    // Root, major third, fifth — arpeggiated upward.
+    for (const [index, frequency] of [523.25, 659.25, 783.99].entries()) {
       const start = now + 0.16 + index * 0.075;
       const duration = 0.3;
 
@@ -853,7 +936,7 @@ export class AudioManager {
       osc.start(start);
       osc.stop(start + duration + 0.02);
       this.#trackVoice(start + duration + 0.02);
-    });
+    }
   }
 
   /** True when audio exists and is actually running. Surfaced in the UI. */
@@ -924,6 +1007,9 @@ export class AudioManager {
     if (!this.#settings.sfxEnabled) return;
     const context = this.#context;
     if (!context || !this.#master) return;
+
+    // The recording, falling back to the synthesised crowd until it decodes.
+    if (this.#playSample(booUrl, 0.8)) return;
 
     const master = this.#master;
     const now = context.currentTime;
