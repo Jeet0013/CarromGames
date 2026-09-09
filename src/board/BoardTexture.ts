@@ -76,17 +76,31 @@ export function createFrameTextures(quality: QualityTier): BoardTextures {
 
   if (!ctx || !rctx) throw new Error('2D canvas context unavailable');
 
+  /*
+   * Deep red lacquer, not brown timber.
+   *
+   * Matched to the supplied welcome artwork, where the frame is a dark crimson
+   * lacquer against a warm wooden table — the two reading as different
+   * materials is most of what gives that board its weight. A brown frame on a
+   * brown table has nothing to separate it but value.
+   *
+   * The grain tint stays a near-black brown rather than a dark red: lacquer is
+   * a finish over timber, so what shows through the colour is still wood.
+   */
   paintWood(
     ctx,
     rctx,
     size,
     {
-      light: '#6d4023',
-      mid: '#5a3419',
-      dark: '#432411',
-      grainRgb: [30, 15, 6],
+      light: '#8b2624',
+      mid: '#6b191b',
+      dark: '#3e0e11',
+      grainRgb: [34, 12, 9],
     },
-    { frequency: 0.012, contrast: 0.42, baseRoughness: 110, vignette: 0.26 },
+    // Deeper and less saturated than the first pass, which came out closer to
+    // a bright plastic red than to lacquered timber. Lacquer is dark; what
+    // makes it read as lacquer is the sheen on top, not the hue underneath.
+    { frequency: 0.012, contrast: 0.36, baseRoughness: 92, vignette: 0.36 },
     17,
   );
 

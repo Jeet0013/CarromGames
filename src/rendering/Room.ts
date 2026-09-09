@@ -36,8 +36,14 @@ const TABLE = {
    * `CameraManager` allows — a visible table edge instantly reads as a prop.
    */
   spread: 7,
-  /** Dark warm wood, a shade cooler and deeper than the board's own frame. */
-  color: 0x171210,
+  /**
+   * Warm mid-brown timber.
+   *
+   * Lifted from the near-black it was, to the wooden table the artwork puts the
+   * board on. It can be this light now without competing: the frame beside it
+   * is crimson lacquer, so the two separate by hue rather than by value.
+   */
+  color: 0x2b1d13,
   /** Polished, but not lacquered: the board should be the glossiest thing. */
   roughness: 0.62,
   /** Resolution of the baked light pool. */
