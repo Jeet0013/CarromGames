@@ -7,8 +7,10 @@
  * result can be hosted anywhere — or opened straight off disk — with no server,
  * no module resolution, and no network requests.
  *
- * That is only possible because the game ships no asset files: the board wood,
- * the markings, and every sound are generated at runtime.
+ * The board wood, the markings and every sound are still generated at runtime.
+ * The two exceptions are the welcome artwork and the logo, which are supplied
+ * art — `assetsInlineLimit` below turns those into data URIs so this file
+ * stays genuinely self-contained.
  *
  *   node scripts/build-single.mjs
  *   → dist-single/carrom-arena.html
@@ -34,6 +36,10 @@ await build({
     outDir: OUT_DIR,
     target: 'es2022',
     sourcemap: false,
+    // Every asset becomes a data URI. Must match vite.config.ts — see the note
+    // there. Without it the two images below are emitted as separate files and
+    // this "self-contained" artifact quietly is not.
+    assetsInlineLimit: Number.MAX_SAFE_INTEGER,
     // Keep the module graph in one file. Code splitting would emit imports
     // that an inlined <script> cannot resolve.
     modulePreload: { polyfill: false },

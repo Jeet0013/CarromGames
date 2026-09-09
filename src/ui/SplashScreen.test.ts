@@ -42,9 +42,17 @@ describe('SplashScreen', () => {
     new SplashScreen(container, vi.fn()).show();
     tap(root());
 
-    // Transparent, but still displayed — that is what absorbs the click.
-    expect(root().style.opacity).toBe('0');
-    expect(root().style.display).toBe('flex');
+    /*
+     * Visually gone, but still displayed and still the hit-test answer — that
+     * is what absorbs the click of this same tap.
+     *
+     * Asserted as "not none" plus the leaving marker rather than as a specific
+     * display value or an inline opacity: those are how it happens to be done,
+     * and pinning them meant this test failed when the fade moved into a
+     * stylesheet, while the fault it exists to catch was nowhere near.
+     */
+    expect(root().classList.contains('is-leaving')).toBe(true);
+    expect(root().style.display).not.toBe('none');
   });
 
   it('swallows the click the same tap produces', () => {
@@ -67,7 +75,7 @@ describe('SplashScreen', () => {
     vi.useFakeTimers();
     new SplashScreen(container, vi.fn()).show();
     tap(root());
-    expect(root().style.display).toBe('flex');
+    expect(root().style.display).not.toBe('none');
 
     await vi.advanceTimersByTimeAsync(600);
     expect(root().style.display).toBe('none');

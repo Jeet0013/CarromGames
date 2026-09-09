@@ -27,9 +27,10 @@
  * silently misbehaves is worse than one that says it is not ready.
  */
 
+import logoArt from '../assets/logo.png';
 import { GameMode } from '../core/types';
 import { ScreenGate } from './ScreenGate';
-import { COLORS, DISPLAY_FONT, LAYER, MONO_FONT, TEXT_FONT, injectBaseSheet, injectSheet } from './theme';
+import { COLORS, LAYER, MONO_FONT, TEXT_FONT, injectBaseSheet, injectSheet } from './theme';
 
 export interface MenuOption {
   readonly mode: GameMode;
@@ -126,9 +127,25 @@ export class MainMenu {
     const header = document.createElement('header');
     header.className = 'cx-menu-header';
 
+    /*
+     * The supplied logo, not a typeset name.
+     *
+     * It was a gradient-clipped heading approximating the mark; using the mark
+     * itself means the menu and the welcome screen carry the same object
+     * rather than two drawings of it. The h1 keeps the accessible name, since
+     * the mark is pixels.
+     */
     const title = document.createElement('h1');
-    title.className = 'cx-menu-title cx-gold';
-    title.textContent = 'Carrom Arena';
+    title.className = 'cx-menu-title';
+
+    const logo = document.createElement('img');
+    logo.src = logoArt;
+    logo.alt = 'Carrom Arena';
+    logo.width = 560;
+    logo.height = 280;
+    logo.className = 'cx-menu-logo';
+
+    title.append(logo);
 
     // A struck rule under the name instead of a second all-caps line. The old
     // "CHOOSE A GAME" said nothing the five rows below it did not already say.
@@ -265,12 +282,17 @@ const MENU_CSS = `
 
 .cx-menu-title {
   margin: 0;
-  font: 900 clamp(26px, 6.4vw, 40px) / 1 ${DISPLAY_FONT};
-  /* Negative tracking at display size: the default spacing is set for reading,
-     not for a name. */
-  letter-spacing: -0.015em;
-  text-align: center;
-  text-shadow: 0 1px 0 #6d4712, 0 2px 4px rgba(0, 0, 0, 0.6);
+  line-height: 0;
+}
+
+.cx-menu-logo {
+  display: block;
+  /* Big enough to read as the game's mark, small enough that the five modes
+     below it are still the reason the screen exists. */
+  width: clamp(190px, 46vw, 270px);
+  height: auto;
+  /* The mark is drawn lit from above; this is its shadow on the plate. */
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.6));
 }
 
 .cx-menu-headrule { width: 100%; }
