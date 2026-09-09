@@ -16,7 +16,12 @@
  */
 
 import type { MatchState } from '../core/GameState';
-import { assignColors, nextSeat, opponentOf } from '../core/GameState';
+import {
+  assignColors,
+  effectiveCoinsPocketed,
+  nextSeat,
+  opposingSeatOf,
+} from '../core/GameState';
 import { FoulManager, type Penalty } from './FoulManager';
 import { QueenManager } from './QueenManager';
 import { CLASSIC_CASUAL, type RuleSet } from './RuleSet';
@@ -113,7 +118,7 @@ export class RuleEngine {
     // Taking your last coin while the Queen is still up is its own violation:
     // the coin comes back, and the turn ends.
     if (queen.lastCoinBeforeQueen) {
-      fouls.push(FoulKind.IllegalStrikerPlacement);
+      fouls.push(FoulKind.LastCoinBeforeQueen);
       penalties.push({ type: 'RETURN_OWN_COIN', deferred: false });
     }
 
@@ -135,17 +140,50 @@ export class RuleEngine {
     }
 
     // ── 5. Victory ──────────────────────────────────────────────────────
-    const totalOwn = player.coinsPocketed + effectiveOwnCoins;
+    /*
+     * Checked for both sides, not only the shooter.
+     *
+     * Pocketing an opponent's coin is a foul, but the coin stays down and
+     * counts for its owner — so a player's board can be cleared *by their
+     * opponent*, without them taking a single shot. Judging only `outcome.by`
+     * meant that game never ended: the side whose coins were all gone had
+     * nothing left to aim at, so the computer sat thinking at a board it could
+     * not play, and no win was ever announced.
+     */
     const returnedCoins = penalties.filter((p) => !p.deferred).length;
-    const netOwn = Math.max(0, totalOwn - returnedCoins);
+    // Side totals, not personal ones: partners share nine coins between them.
+    const shooterTotal = Math.max(
+      0,
+      effectiveCoinsPocketed(state, outcome.by) + effectiveOwnCoins - returnedCoins,
+    );
+
+    const creditedSlot = opposingSeatOf(state, outcome.by);
+    const creditedTotal = effectiveCoinsPocketed(state, creditedSlot) + opponentCoins;
+
+    // An owed cover blocks a win: the Queen is unsettled, so the match is not
+    // actually over.
+    const queenSettled = !QueenManager.blocksVictory({ ...state, queen: queen.state }, rules);
+
+    /*
+     * With one exception, for the side whose board was cleared *for* them.
+     *
+     * If they are the one who owes the cover they can never pay it — they have
+     * no coins left on the board to cover with, and no shot that could put one
+     * there. Blocking the win on that obligation does not prolong the match,
+     * it deadlocks it: neither player has a legal, progressing move left. A
+     * debt that cannot be discharged is not a reason to keep playing.
+     *
+     * A Queen still *on the board* never blocks this win either, for the same
+     * reason — the winner was not the one shooting.
+     */
+    const creditedQueenSettled = queenSettled || state.queenPocketedBy === creditedSlot;
 
     let winner: PlayerSlot | null = null;
-    if (
-      rules.winOnAllCoinsPocketed &&
-      netOwn >= 9 &&
-      !QueenManager.blocksVictory({ ...state, queen: queen.state }, rules)
-    ) {
-      winner = outcome.by;
+    if (rules.winOnAllCoinsPocketed) {
+      // The shooter takes precedence if both boards complete on one shot:
+      // clearing your own coins is the primary win condition.
+      if (shooterTotal >= 9 && queenSettled) winner = outcome.by;
+      else if (creditedTotal >= 9 && creditedQueenSettled) winner = creditedSlot;
     }
 
     if (winner === null) {
@@ -192,7 +230,7 @@ export class RuleEngine {
     opponent += outcome.opponentCoins;
 
     player.coinsPocketed += own;
-    state.players[opponentOf(outcome.by)].coinsPocketed += opponent;
+    state.players[opposingSeatOf(state, outcome.by)].coinsPocketed += opponent;
 
     // Board inventory.
     for (const color of [CoinColor.White, CoinColor.Black]) {

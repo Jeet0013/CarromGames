@@ -40,7 +40,35 @@ export type NetMessage =
       readonly pieces: readonly PieceSnapshot[];
       readonly currentPlayer: PlayerSlot;
     }
-  | { readonly type: 'rematch' };
+  | { readonly type: 'rematch' }
+  | { readonly type: 'ping' };
+
+/**
+ * How long to wait for the data channel before giving up on a join.
+ *
+ * A WebRTC connection that cannot be made usually fails *silently* — the offer
+ * goes out and no answer ever comes back. Without a deadline the guest sits on
+ * "Connecting to the other player…" indefinitely with nothing to act on, which
+ * is the worst possible way to report a failure.
+ */
+const JOIN_TIMEOUT_MS = 20_000;
+
+/**
+ * Liveness, because WebRTC on its own does not report a peer that simply
+ * vanishes.
+ *
+ * A closed tab, a phone put in a pocket, a train through a tunnel: none of
+ * these produce a `close` event on the data channel with any promptness — a
+ * host was still reporting a connected opponent half a minute after their tab
+ * had gone. The other player was then stuck watching a turn that could never
+ * arrive, with their own input locked because it was not theirs to take.
+ *
+ * The timeout is deliberately long. A backgrounded page has its timers
+ * throttled and its game loop stopped, so a peer quiet for this long is not
+ * merely slow — they cannot be playing.
+ */
+const PING_INTERVAL_MS = 4_000;
+const PEER_TIMEOUT_MS = 45_000;
 
 export type NetRole = 'host' | 'guest' | 'offline';
 
@@ -75,6 +103,8 @@ export class NetworkManager {
   #role: NetRole = 'offline';
   #status: NetStatus = 'idle';
   #roomId = '';
+  #heartbeat = 0;
+  #lastHeard = 0;
 
   /** Set by Game so incoming shots can be replayed through the turn machine. */
   onShot: ((by: PlayerSlot, shot: ShotCommand) => void) | undefined;
@@ -129,9 +159,31 @@ export class NetworkManager {
     }
   }
 
+  /**
+   * Publish a status change.
+   *
+   * Guarded against repeats, because "connected" genuinely arrives twice: once
+   * when the data channel opens and again when the peer's `hello`/`welcome`
+   * lands on it. The listener starts a match, so firing twice reset the board
+   * out from under a game that had already begun.
+   */
   #setStatus(status: NetStatus, detail?: string): void {
+    if (status === this.#status && status !== 'error') return;
     this.#status = status;
     this.onStatus?.(status, detail);
+  }
+
+  /**
+   * Report a failure, unless the session is already up.
+   *
+   * PeerJS surfaces broker chatter through the same `error` channel as a fatal
+   * setup failure — an unrelated peer going away, a signalling socket dropping
+   * after the WebRTC channel is established. Those are not the player's
+   * problem once the two devices are talking directly.
+   */
+  #reportError(detail: string): void {
+    if (this.#status === 'connected') return;
+    this.#setStatus('error', detail);
   }
 
   /**
@@ -183,7 +235,7 @@ export class NetworkManager {
       }) as never);
 
       peer.on('error', ((error: { type?: string; message?: string }) => {
-        this.#setStatus('error', error?.message ?? error?.type ?? 'connection failed');
+        this.#reportError(error?.message ?? error?.type ?? 'connection failed');
         reject(new Error(error?.message ?? 'peer error'));
       }) as never);
     });
@@ -200,12 +252,22 @@ export class NetworkManager {
     this.#peer = peer;
 
     return new Promise<void>((resolve, reject) => {
+      const deadline = window.setTimeout(() => {
+        if (this.#status === 'connected') return;
+        const message =
+          'Could not reach the other player. A phone network often blocks a ' +
+          'direct connection — try both devices on the same Wi-Fi.';
+        this.#reportError(message);
+        reject(new Error(message));
+      }, JOIN_TIMEOUT_MS);
+
       peer.on('open', (() => {
         const connection = peer.connect(roomId, { reliable: true });
         this.#connection = connection;
         this.#bindConnection(connection);
 
         connection.on('open', (() => {
+          window.clearTimeout(deadline);
           this.#setStatus('connected');
           this.#send({ type: 'hello', name: 'Guest' });
           resolve();
@@ -217,7 +279,8 @@ export class NetworkManager {
           error?.type === 'peer-unavailable'
             ? 'That game is no longer open.'
             : (error?.message ?? 'connection failed');
-        this.#setStatus('error', message);
+        window.clearTimeout(deadline);
+        this.#reportError(message);
         reject(new Error(message));
       }) as never);
     });
@@ -226,12 +289,43 @@ export class NetworkManager {
   #bindConnection(connection: ConnectionLike): void {
     connection.on('data', ((raw: unknown) => this.#receive(raw)) as never);
     connection.on('close', (() => this.#setStatus('disconnected')) as never);
-    connection.on('error', (() => this.#setStatus('error', 'connection lost')) as never);
+    connection.on('error', (() => this.#reportError('connection lost')) as never);
+    connection.on('open', (() => this.#startHeartbeat()) as never);
+  }
+
+  /** Ping the peer, and notice when they stop answering. */
+  #startHeartbeat(): void {
+    this.#stopHeartbeat();
+    this.#lastHeard = Date.now();
+    this.#heartbeat = window.setInterval(() => {
+      /*
+       * Only judge the peer while this page is actually running. Hidden tabs
+       * have their timers throttled to roughly once a minute, so a check made
+       * from the background says more about this device than the other one.
+       */
+      if (document.hidden) {
+        this.#lastHeard = Date.now();
+        return;
+      }
+      if (Date.now() - this.#lastHeard > PEER_TIMEOUT_MS) {
+        this.#setStatus('disconnected');
+        return;
+      }
+      this.#send({ type: 'ping' });
+    }, PING_INTERVAL_MS);
+  }
+
+  #stopHeartbeat(): void {
+    if (this.#heartbeat) window.clearInterval(this.#heartbeat);
+    this.#heartbeat = 0;
   }
 
   #receive(raw: unknown): void {
     const message = raw as NetMessage;
     if (!message || typeof message !== 'object') return;
+
+    // Any traffic at all proves the peer is still there.
+    this.#lastHeard = Date.now();
 
     switch (message.type) {
       case 'shot':
@@ -249,6 +343,9 @@ export class NetworkManager {
         break;
       case 'welcome':
         this.#setStatus('connected');
+        break;
+      case 'ping':
+        // Nothing to do; receiving it was the point.
         break;
       default:
         break;
@@ -280,6 +377,7 @@ export class NetworkManager {
   }
 
   #teardown(): void {
+    this.#stopHeartbeat();
     this.#connection?.close();
     this.#connection = undefined;
     this.#peer?.destroy();

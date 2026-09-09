@@ -14,7 +14,7 @@
  * request; this decides *that* the Queen returns, not where she lands.
  */
 
-import type { MatchState } from '../core/GameState';
+import { effectiveCoinsPocketed, type MatchState } from '../core/GameState';
 import type { RuleSet } from './RuleSet';
 import type { ShotOutcome } from './ShotEvaluator';
 import { QueenState } from '../core/types';
@@ -87,7 +87,8 @@ export class QueenManager {
       rules.queenRequiredBeforeLastCoin &&
       current === QueenState.OnBoard &&
       outcome.ownCoins > 0 &&
-      player.coinsPocketed + outcome.ownCoins >= 9;
+      // The side's total, so a partner's coins count toward the final one.
+      effectiveCoinsPocketed(state, outcome.by) + outcome.ownCoins >= 9;
 
     return {
       state: current,

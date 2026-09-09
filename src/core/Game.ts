@@ -37,7 +37,7 @@ import { CinematicCameraManager } from '../camera/CinematicCameraManager';
 import { NetworkManager, type PieceSnapshot } from '../net/NetworkManager';
 import { OnlineLobby } from '../ui/OnlineLobby';
 import { PlayerSide } from './PlayerSide';
-import { GameMode, PlayerSlot } from './types';
+import { GameMode, PlayerSlot, TurnState } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
@@ -91,6 +91,8 @@ export class Game {
   readonly #net: NetworkManager;
   readonly #lobby: OnlineLobby;
   #lastMode: GameMode = GameMode.LocalMultiplayer;
+  /** Host snapshot waiting for the local board to stop moving. */
+  #pendingSync: { pieces: readonly PieceSnapshot[]; currentPlayer: PlayerSlot } | null = null;
 
   #physicsDebug: PhysicsDebugRenderer | undefined;
 
@@ -148,7 +150,7 @@ export class Game {
       this.#pocketEffect.play(pocketIndex),
     );
 
-    this.events.on('rules:gameComplete', ({ winner }) => this.#showResult(winner));
+    this.events.on('rules:gameComplete', ({ winner, by }) => this.#showResult(winner, by));
 
     // Turn the board toward whoever plays next.
     this.events.on('turn:playerSwitched', () => this.#faceActivePlayer());
@@ -173,7 +175,7 @@ export class Game {
 
     this.#victory = new VictoryScreen(
       container,
-      () => this.#startMode(this.#lastMode),
+      () => this.#playAgain(),
       () => this.showMenu(),
     );
     this.#splash = new SplashScreen(container, () => {
@@ -203,6 +205,7 @@ export class Game {
         this.#net.disconnect();
         this.#camera.setAzimuthDegrees(0);
       }
+      this.#pendingSync = null;
       this.#ai.configure(null, AIDifficulty.Normal);
       this.#victory.hide();
       this.showMenu();
@@ -349,11 +352,21 @@ export class Game {
   }
 
   /** Announce the result in the winner's own terms. */
-  #showResult(winner: PlayerSlot): void {
+  #showResult(winner: PlayerSlot, by: PlayerSlot): void {
     const seats = SEAT_LAYOUTS[this.#lastMode];
     const seat = seats.find((s) => s.slot === winner);
     const vsComputer = this.#lastMode === GameMode.QuickMatch;
-    const humanWon = winner === PlayerSlot.One;
+    const online = this.#net.isOnline;
+    // Online, "you" is whichever seat this device owns; everywhere else the
+    // human is Player One.
+    const localSlot = online ? this.#net.localSlot : PlayerSlot.One;
+    const humanWon = winner === localSlot;
+
+    // A board can be cleared by the *other* player: pocketing an opponent's
+    // coin is a foul, but the coin still counts for its owner. Saying "all
+    // nine coins pocketed" there would read as a bug, so the result explains
+    // itself.
+    const clearedByOpponent = winner !== by;
 
     this.#setChromeVisible(false);
     this.#victory.show({
@@ -362,9 +375,13 @@ export class Game {
           ? 'YOU WIN'
           : 'COMPUTER WINS'
         : `${seat?.name ?? 'Player'} WINS`,
-      subtitle: humanWon
-        ? 'All nine coins pocketed, with the Queen settled.'
-        : 'All nine of their coins pocketed, with the Queen settled.',
+      subtitle: clearedByOpponent
+        ? humanWon
+          ? 'Your opponent pocketed your last coin — the board is yours.'
+          : 'Their last coin went down on your shot, which finishes their board.'
+        : humanWon
+          ? 'All nine coins pocketed, with the Queen settled.'
+          : 'All nine of their coins pocketed, with the Queen settled.',
       playerWon: humanWon,
     });
   }
@@ -460,6 +477,15 @@ export class Game {
 
   /** Join a room from a shared link. Called at boot when `?join=` is present. */
   async joinOnline(roomId: string): Promise<void> {
+    /*
+     * The splash sits above everything so its tap can unlock audio, which put
+     * it directly on top of the lobby for anyone arriving on a share link:
+     * they saw "Tap to start" over a connection they had not asked to make,
+     * and the tap fell through onto the lobby's own controls. Someone opening
+     * an invitation has already chosen what they want, so this screen is not
+     * theirs — audio unlocks on their first tap anywhere regardless.
+     */
+    this.#splash.hide();
     this.#menu.hide();
     this.#setChromeVisible(false);
     this.#lobby.showJoining();
@@ -482,19 +508,31 @@ export class Game {
     this.#net.onStatus = (status, detail) => {
       if (status === 'connected') {
         this.#lobby.hide();
-        this.#setChromeVisible(true);
-    // The theme belongs to the menus; play is quiet apart from the board.
-    this.#audio.stopMenuMusic();
-        this.setMode(GameMode.Online);
-        this.#ai.configure(null, AIDifficulty.Normal);
-        this.#applyLocalSeatView();
-        this.#turns.start();
+        this.#startOnlineMatch();
         this.events.emit('ui:notify', { message: 'OPPONENT CONNECTED', tone: 'good' });
       }
       if (status === 'disconnected') {
+        /*
+         * A dropped opponent used to leave the match standing, and that is a
+         * dead end rather than a setback: input is locked whenever it is the
+         * remote player's turn, so the local player was left holding a board
+         * they could not touch and no way out but a reload.
+         */
         this.events.emit('ui:notify', { message: 'OPPONENT LEFT', tone: 'bad' });
+        this.#pendingSync = null;
+        this.#victory.hide();
+        this.#net.disconnect();
+        this.#camera.setAzimuthDegrees(0, true);
+        this.showMenu();
       }
       if (status === 'error' && detail) this.#lobby.setStatus(detail);
+    };
+
+    // Both devices restart together, or the boards disagree from move one.
+    this.#net.onRematch = () => {
+      this.#victory.hide();
+      this.#startOnlineMatch();
+      this.events.emit('ui:notify', { message: 'REMATCH', tone: 'good' });
     };
 
     // A shot from the other device is replayed through the same turn machine
@@ -505,19 +543,20 @@ export class Game {
       this.#turns.acceptRemoteShot(shot);
     };
 
-    // Guest only: adopt the host's positions once its shot has settled.
+    /*
+     * Guest only: adopt the host's positions once its shot has settled.
+     *
+     * Held back while the board is still moving. `adoptTurn` forces the turn
+     * machine into positioning, and the host's snapshot routinely arrives
+     * before the guest has finished simulating the same shot — so applying it
+     * on arrival tore the guest out of `PHYSICS_SETTLING` mid-shot. The shot
+     * was then never resolved locally: its score was never counted and its
+     * pocket log leaked into the *next* shot's evaluation. Deferring costs a
+     * few frames and keeps both boards honest.
+     */
     this.#net.onSync = (pieces, currentPlayer) => {
-      for (const snapshot of pieces) {
-        const piece = this.#pieces.get(snapshot.id);
-        if (!piece) continue;
-        if (!snapshot.active && piece.active) piece.pocket(this.#physics);
-        else if (snapshot.active) {
-          if (piece.pocketed) piece.reset(this.#physics, { x: snapshot.x, z: snapshot.z });
-          else this.#physics.setPosition(snapshot.id, snapshot.x, snapshot.z);
-        }
-      }
-      this.#turns.adoptTurn(currentPlayer);
-      this.#hud.bind(this.#turns.match);
+      this.#pendingSync = { pieces, currentPlayer };
+      this.#drainSync();
     };
 
     // Relay every locally-taken shot.
@@ -544,6 +583,50 @@ export class Game {
     });
   }
 
+  /**
+   * Apply a held snapshot, once the board is settled enough to accept it.
+   *
+   * Called both on arrival and from the fixed update, so a snapshot that
+   * turned up mid-shot lands the moment the shot resolves.
+   */
+  #drainSync(): void {
+    const pending = this.#pendingSync;
+    if (!pending) return;
+    // Anything but positioning means a shot of our own is still resolving.
+    if (this.#turns.state !== TurnState.StrikerPositioning) return;
+    this.#pendingSync = null;
+
+    for (const snapshot of pending.pieces) {
+      const piece = this.#pieces.get(snapshot.id);
+      if (!piece) continue;
+      if (!snapshot.active && piece.active) piece.pocket(this.#physics);
+      else if (snapshot.active) {
+        if (piece.pocketed) piece.reset(this.#physics, { x: snapshot.x, z: snapshot.z });
+        else this.#physics.setPosition(snapshot.id, snapshot.x, snapshot.z);
+      }
+    }
+    this.#turns.adoptTurn(pending.currentPlayer);
+    this.#hud.bind(this.#turns.match);
+  }
+
+  /**
+   * Put both devices into a fresh online match.
+   *
+   * Shared by the first connection and by a rematch, so the two can never
+   * drift apart in what they set up.
+   */
+  #startOnlineMatch(): void {
+    this.#pendingSync = null;
+    this.#lastMode = GameMode.Online;
+    this.#setChromeVisible(true);
+    // The theme belongs to the menus; play is quiet apart from the board.
+    this.#audio.stopMenuMusic();
+    this.setMode(GameMode.Online);
+    this.#ai.configure(null, AIDifficulty.Normal);
+    this.#applyLocalSeatView();
+    this.#turns.start();
+  }
+
   get cinematic(): CinematicCameraManager {
     return this.#cinematic;
   }
@@ -565,12 +648,31 @@ export class Game {
 
   /** Return to mode selection. Panels are cleared so none linger. */
   showMenu(): void {
+    this.#pendingSync = null;
     this.#hud.setSeats([]);
     this.#notifications.setBanner(null);
     this.#setChromeVisible(false);
     this.#menu.show();
     // Plays whenever a menu is up, including on the way back from a match.
     this.#audio.startMenuMusic();
+  }
+
+  /**
+   * Rematch from the victory screen.
+   *
+   * Online this must reuse the live connection. Routing it through
+   * `#startMode` created a *second* room while the first was still open: the
+   * player was shown a fresh invite link and their opponent, who had gone
+   * nowhere, was silently abandoned.
+   */
+  #playAgain(): void {
+    if (this.#net.isOnline && this.#net.status === 'connected') {
+      this.#net.sendRematch();
+      this.#victory.hide();
+      this.#startOnlineMatch();
+      return;
+    }
+    this.#startMode(this.#lastMode);
   }
 
   /** Chosen from the menu: configure the mode, then hand over the board. */
@@ -668,6 +770,8 @@ export class Game {
     // must be logged before the same step can declare the shot settled.
     this.#pockets.update(delta);
     this.#turns.update();
+    // A snapshot held back mid-shot is applied the instant the board settles.
+    this.#drainSync();
   }
 
   /** Board corners in world space, reused so the projection allocates nothing. */
