@@ -19,7 +19,7 @@
 
 import applauseUrl from '../assets/applause.mp3';
 import booUrl from '../assets/boo.mp3';
-import { PieceKind } from '../core/types';
+import { FoulKind, PieceKind } from '../core/types';
 import type { EventBus } from '../core/EventBus';
 import { PHYSICS_CONFIG } from '../physics/PhysicsConfig';
 
@@ -153,11 +153,21 @@ export class AudioManager {
       if (kind !== PieceKind.Striker) this.#pottedThisShot = true;
     });
 
-    // Every foul the rules recognise: the striker going down, pocketing a coin
-    // that was not yours, no contact, an illegal placement.
-    events.on('rules:foul', () => {
+    /*
+     * The crowd boos a mistake, not a miss.
+     *
+     * Every foul still counts against the shot, so none of them lead to
+     * applause. But NoContact — the striker crossing the board without
+     * touching anything — is the one a player already knows about and already
+     * feels. Jeering it is the game piling on, and since a beginner misses
+     * constantly, it is also the sound they would hear most.
+     *
+     * The rule is untouched: a miss is still a foul and still carries its
+     * penalty. This is only about whether a room full of people reacts to it.
+     */
+    events.on('rules:foul', ({ kind }) => {
       this.#fouledThisShot = true;
-      this.playBoo();
+      if (kind !== FoulKind.NoContact) this.playBoo();
     });
 
     events.on('shot:resolved', () => {
