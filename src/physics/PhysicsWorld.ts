@@ -56,10 +56,18 @@ export interface PieceBodyOptions {
 /**
  * How slick a powdered board is, and for how long.
  *
- * `STRENGTH` is the friction multiplier at full effect: 0.40 means the board
- * keeps 40% of its friction, so it is 60% slicker than bare. It was 0.55, and
- * at that value a rebound rarely had enough left to cross the board a second
- * time — the bank shot behind the striker line was luck rather than a play.
+ * `STRENGTH` is the friction multiplier at full effect: 0.32 means the board
+ * keeps 32% of its friction, so it is 68% slicker than bare. It was 0.55, then
+ * 0.40; at the original figure a rebound rarely had enough left to cross the
+ * board a second time, so the bank shot behind the striker line was luck
+ * rather than a play.
+ *
+ * There is a floor here and it is not taste. Coulomb deceleration is
+ * BOARD_FRICTION x STRENGTH x g, so at 0.32 a striker at MAX_VELOCITY that
+ * never touches a rail takes 8.2s to stop, against a MAX_SETTLE_SECONDS of 12.
+ * That is 32% headroom on the pessimistic case. Much below 0.30 and a slow
+ * shot on a slow device starts risking the turn machine giving up mid-shot,
+ * which would read as the game freezing.
  *
  * The figure was also written twice: once as this default and once as a
  * literal inside the decay, which interpolates back toward a bare board. They
@@ -68,7 +76,7 @@ export interface PieceBodyOptions {
  * have been a board that mysteriously got slicker as the powder wore off.
  */
 const POWDER = {
-  STRENGTH: 0.4,
+  STRENGTH: 0.32,
   SECONDS: 40,
 } as const;
 
