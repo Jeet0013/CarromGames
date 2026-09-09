@@ -132,7 +132,7 @@ export class Tutorial {
     list.className = 'cx-tutorial-ruleslist';
 
     for (const rule of [
-      'The first coin you pocket claims that colour — light or dark. The other colour becomes your opponent\u2019s.',
+      'The first coin you pocket claims that colour — white or black. The other colour becomes your opponent\u2019s.',
       'Pocket one of your own coins and you shoot again. Miss, and the turn passes.',
       'Pocket the red Queen and you must cover her by pocketing one of your own coins on the next shot, or she goes back to the centre.',
       'Pocket the striker and it is a foul: your turn ends and one of your coins returns to the board.',

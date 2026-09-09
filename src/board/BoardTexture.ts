@@ -32,10 +32,19 @@ const TEXTURE_SIZE: Record<QualityTier, number> = {
 };
 
 const PALETTE = {
-  /** Pale polished plywood, as a real playing surface is. */
-  surfaceLight: '#e8cfa6',
-  surfaceMid: '#dcbe91',
-  surfaceDark: '#c9a877',
+  /**
+   * Polished plywood — a few stops down from where it was.
+   *
+   * It was #e8cfa6 / #dcbe91 / #c9a877, which under the room's lighting came
+   * out close enough to the white coins that the two stopped separating: a
+   * white coin on a pale bed is a white shape on a white shape, and the coin
+   * is the thing that has to be read at a glance. A real board is warmer and
+   * darker than this palette assumed, and the extra contrast costs nothing —
+   * the black coins have plenty of range left below them.
+   */
+  surfaceLight: '#cdae7d',
+  surfaceMid: '#bd9a66',
+  surfaceDark: '#a67f4d',
   /** Grain streaks. */
   grain: 'rgba(120, 84, 46, 0.10)',
   /** Painted lines — dark brown rather than pure black, which reads as ink. */

@@ -37,10 +37,11 @@ import { CinematicCameraManager } from '../camera/CinematicCameraManager';
 import { NetworkManager, type PieceSnapshot } from '../net/NetworkManager';
 import { OnlineLobby } from '../ui/OnlineLobby';
 import { PlayerSide } from './PlayerSide';
-import { GameMode, PlayerSlot, TurnState } from './types';
+import { GameMode, PlayerSlot, QueenState, TurnState } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
+import { COINS_PER_PLAYER } from '../gameplay/RuleSet';
 import { Environment } from '../rendering/Environment';
 import { Lighting } from '../rendering/Lighting';
 import { Renderer } from '../rendering/Renderer';
@@ -379,6 +380,7 @@ export class Game {
   /** Announce the result in the winner's own terms. */
   #showResult(winner: PlayerSlot, by: PlayerSlot): void {
     const seats = SEAT_LAYOUTS[this.#lastMode];
+    const match = this.#turns.match;
     const seat = seats.find((s) => s.slot === winner);
     const vsComputer = this.#lastMode === GameMode.QuickMatch;
     const online = this.#net.isOnline;
@@ -408,6 +410,22 @@ export class Game {
           ? 'All nine coins pocketed, with the Queen settled.'
           : 'All nine of their coins pocketed, with the Queen settled.',
       playerWon: humanWon,
+      // Every seat's final board, winner first, so the eye lands on the result
+      // before the detail.
+      rows: seats
+        .map((s) => {
+          const player = match.players[s.slot];
+          return {
+            name: s.name,
+            color: player.color,
+            potted: Math.min(COINS_PER_PLAYER, player.coinsPocketed),
+            total: COINS_PER_PLAYER,
+            hasQueen:
+              match.queen === QueenState.Covered && match.queenPocketedBy === s.slot,
+            isWinner: s.slot === winner,
+          };
+        })
+        .sort((a, b) => Number(b.isWinner) - Number(a.isWinner)),
     });
   }
 

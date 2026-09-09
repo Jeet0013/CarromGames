@@ -256,9 +256,20 @@ const SPLASH_CSS = `
  * where a full-screen image can afford it. Animating anything else here would
  * relayout the largest element on the page every frame.
  */
-.cx-splash.is-entering .cx-splash-stage,
 .cx-splash.is-entering .cx-splash-ground {
   animation: cx-splash-in 620ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/*
+ * The stage gets its own keyframes, carrying the centring translate.
+ *
+ * It shared the ground's, whose \`to\` state is \`transform: scale(1)\` — and with
+ * \`fill: both\` that final value sticks, wiping the translate(-50%, -50%) that
+ * centres the stage. The art ended up hung off the middle of the screen by its
+ * top-left corner.
+ */
+.cx-splash.is-entering .cx-splash-stage {
+  animation: cx-splash-stage-in 620ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
 @keyframes cx-splash-in {
@@ -266,7 +277,13 @@ const SPLASH_CSS = `
   to   { opacity: 1; transform: scale(1); }
 }
 
+@keyframes cx-splash-stage-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(1.03); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
 /* And the exit, into the menu. */
+/* The exit scales the whole screen, which is not centred by a transform. */
 .cx-splash.is-leaving {
   opacity: 0;
   transform: scale(0.99);
@@ -287,19 +304,33 @@ const SPLASH_CSS = `
   transform: scale(1.1);
 }
 
-.cx-splash-art--wide { display: none; }
 
 .cx-splash-stage {
   position: absolute;
-  inset: 0;
-  margin: auto;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   /* The art's own proportions. Percentages inside this box therefore land on
      the art's own pixels, at any size, with nothing to measure. */
   aspect-ratio: ${ART.tall.width} / ${ART.tall.height};
-  max-width: 100%;
-  max-height: 100%;
-  /* Only as large as it really is — upscaling a JPEG past 1:1 just softens it. */
-  width: min(100%, calc(100vh * ${ART.tall.width} / ${ART.tall.height}));
+
+  /*
+   * Fill the screen, cropping the sides rather than letterboxing.
+   *
+   * A phone is about 9:19.5; this art is 2:3. Fitted whole it left a dead band
+   * of blurred nothing above and below — which is what a real device showed.
+   * Scaling until both axes are covered crops the left and right edges
+   * instead, and the composition survives that: the logo and the button are
+   * centred, and what goes are the corner taglines.
+   *
+   * The stage keeps the art's aspect ratio either way, so the button's
+   * percentages still land on the same pixels.
+   *
+   * dvh, not vh: on a phone vh is the height with the browser chrome
+   * *collapsed*, so a stage sized in vh is taller than the screen until you
+   * scroll — which is its own dead band.
+   */
+  width: max(100%, calc(100dvh * ${ART.tall.width} / ${ART.tall.height}));
 }
 
 .cx-splash-art {
@@ -313,6 +344,19 @@ const SPLASH_CSS = `
   user-select: none;
   -webkit-user-drag: none;
 }
+
+/*
+ * Which plate is showing.
+ *
+ * Declared AFTER \`.cx-splash-art\` on purpose. It was declared before, and
+ * \`display: block\` on the base class then won on source order — same
+ * specificity, later rule — so both plates rendered at once. On a desktop the
+ * landscape media query came last and hid the portrait one, which is why it
+ * only looked right there; in portrait, where that query does not apply, the
+ * phone drew the tall art and then the wide art stacked underneath it.
+ */
+.cx-splash-art--wide { display: none; }
+.cx-splash-art--tall { display: block; }
 
 /*
  * The control over the painted button.
@@ -364,7 +408,10 @@ const SPLASH_CSS = `
 @media (min-aspect-ratio: 1 / 1) {
   .cx-splash-stage {
     aspect-ratio: ${ART.wide.width} / ${ART.wide.height};
-    width: min(100%, calc(100vh * ${ART.wide.width} / ${ART.wide.height}));
+    /* Landscape fits the whole plate: it is drawn for this shape, so there is
+       little to gain from cropping it and a corner tagline to lose. */
+    width: min(100%, calc(100dvh * ${ART.wide.width} / ${ART.wide.height}));
+    max-height: 100%;
   }
 
   .cx-splash-art--tall { display: none; }

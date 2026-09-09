@@ -7,6 +7,7 @@
  */
 
 import type { EventBus } from '../core/EventBus';
+import { QueenState } from '../core/types';
 import type { MatchState } from '../core/GameState';
 import { PlayerSide } from '../core/PlayerSide';
 import { PlayerPanel } from './PlayerPanel';
@@ -172,6 +173,10 @@ export class GameHUD {
         coinsPocketed: player.coinsPocketed,
         color: player.color,
         active: match.currentPlayer === seat.slot && match.winner === null,
+        // The Queen counts for whoever pocketed her, but only once covered —
+        // until then she is still in play and belongs to nobody.
+        hasQueen:
+          match.queen === QueenState.Covered && match.queenPocketedBy === seat.slot,
       });
     }
   }
