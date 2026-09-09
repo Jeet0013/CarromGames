@@ -13,9 +13,21 @@ import { injectBaseSheet } from './theme';
 export class SoundToggle {
   readonly #button: HTMLButtonElement;
   readonly #audio: AudioManager;
+  readonly #onChange: ((enabled: boolean) => void) | undefined;
 
-  constructor(container: HTMLElement, audio: AudioManager) {
+  /**
+   * @param onChange Called with the new state so it can be persisted. Without
+   *   it the toggle changed the running game and nothing else — the preference
+   *   was never written, so it could not survive a reload even though
+   *   `SaveManager` had a field waiting for it.
+   */
+  constructor(
+    container: HTMLElement,
+    audio: AudioManager,
+    onChange?: (enabled: boolean) => void,
+  ) {
     this.#audio = audio;
+    this.#onChange = onChange;
 
     this.#button = document.createElement('button');
     this.#button.type = 'button';
@@ -38,7 +50,9 @@ export class SoundToggle {
   readonly #onClick = (event: MouseEvent): void => {
     // The canvas sits underneath; without this the tap also aims a shot.
     event.stopPropagation();
-    this.#audio.setSfxEnabled(!this.#audio.settings.sfxEnabled);
+    const enabled = !this.#audio.settings.sfxEnabled;
+    this.#audio.setSfxEnabled(enabled);
+    this.#onChange?.(enabled);
     this.#render();
   };
 

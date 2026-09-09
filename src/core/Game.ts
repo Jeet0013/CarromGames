@@ -191,7 +191,21 @@ export class Game {
 
     // Audio subscribes to physics and pocket events; it never calls into rules.
     this.#audio = new AudioManager(this.events);
-    this.#soundToggle = new SoundToggle(container, this.#audio);
+
+    /*
+     * Restore the saved sound preference.
+     *
+     * `SaveManager` has persisted `settings.sfxEnabled` since it was written,
+     * and nothing ever read it back — so muting the game survived exactly
+     * until the next reload, then silently switched itself back on. The
+     * setting was being written and thrown away.
+     */
+    this.#audio.setSfxEnabled(this.#save.data.settings.sfxEnabled);
+    this.#audio.setMusicEnabled(this.#save.data.settings.musicEnabled);
+    this.#soundToggle = new SoundToggle(container, this.#audio, (sfxEnabled) => {
+      // Music follows the one mute control, so both are stored together.
+      this.#save.update({ settings: { sfxEnabled, musicEnabled: sfxEnabled } });
+    });
 
     this.#net = new NetworkManager(this.events);
     this.#lobby = new OnlineLobby(
