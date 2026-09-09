@@ -13,6 +13,8 @@
  * are choosing — which is what "automatic" actually feels like.
  */
 
+import { GAME_CONFIG } from '../config/GameConfig';
+
 /**
  * How long the invisible shield stays up after the tap.
  *
@@ -96,7 +98,29 @@ export class SplashScreen {
       }`;
     document.head.append(style);
 
-    this.#root.append(title, prompt, note);
+    /*
+     * Which build this is.
+     *
+     * Deliberately visible rather than hidden in the console: the device that
+     * matters is a phone at the other end of a share link, and every bug
+     * report so far has had to start by establishing whether the fix being
+     * discussed was even present. Small and dim enough to disappear.
+     */
+    const build = document.createElement('div');
+    build.textContent = `Build ${GAME_CONFIG.build}`;
+    build.style.cssText = [
+      'position:absolute',
+      'bottom:max(10px, env(safe-area-inset-bottom))',
+      'left:0',
+      'right:0',
+      'text-align:center',
+      'font:500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'letter-spacing:0.1em',
+      'color:#4a423a',
+      'pointer-events:none',
+    ].join(';');
+
+    this.#root.append(title, prompt, note, build);
 
     /*
      * Pointerdown, not click: the audio unlock listens on the same event, and

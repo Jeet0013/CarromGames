@@ -19,12 +19,18 @@ export class OnlineLobby {
   readonly #linkText: HTMLElement;
   readonly #copy: HTMLButtonElement;
   readonly #code: HTMLElement;
+  readonly #joinBox: HTMLElement;
+  readonly #joinInput: HTMLInputElement;
   /** Ignores the click left behind by the tap that opened this screen. */
   readonly #gate = new ScreenGate();
   #visible = false;
   #link = '';
 
-  constructor(container: HTMLElement, onCancel: () => void) {
+  constructor(
+    container: HTMLElement,
+    onCancel: () => void,
+    onJoinCode: (roomId: string) => void,
+  ) {
     this.#root = document.createElement('div');
     this.#root.style.cssText = [
       'position:absolute',
@@ -130,8 +136,100 @@ export class OnlineLobby {
       onCancel();
     });
 
-    this.#root.append(this.#title, this.#status, this.#linkBox, cancel);
+    /*
+     * The way back in when the link does not work.
+     *
+     * A link crosses to the other player through whatever app they happen to
+     * share it in, and it does not always arrive whole — the room code can be
+     * stripped somewhere along the way, and then the invitation opens the game
+     * with no idea that it was an invitation. Until now that was the end of
+     * it: the code was shown to the host precisely because links are fragile,
+     * and there was nowhere for the other player to type it.
+     */
+    this.#joinBox = document.createElement('div');
+    this.#joinBox.style.cssText = [
+      'display:flex',
+      'flex-direction:column',
+      'gap:10px',
+      'width:min(460px, 100%)',
+      'padding:16px',
+      'border-radius:14px',
+      'border:1px solid rgba(176,122,69,0.2)',
+      'background:rgba(20,17,14,0.7)',
+    ].join(';');
+
+    const joinLabel = document.createElement('div');
+    joinLabel.textContent = 'Or join a friend’s game';
+    joinLabel.style.cssText = [
+      'font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'letter-spacing:0.16em',
+      'text-transform:uppercase',
+      'color:#9a8d7d',
+    ].join(';');
+
+    this.#joinInput = document.createElement('input');
+    this.#joinInput.type = 'text';
+    this.#joinInput.placeholder = 'Room code';
+    this.#joinInput.autocapitalize = 'off';
+    this.#joinInput.autocomplete = 'off';
+    this.#joinInput.spellcheck = false;
+    this.#joinInput.style.cssText = [
+      'padding:14px 16px',
+      'border-radius:10px',
+      'border:1px solid rgba(176,122,69,0.32)',
+      'background:rgba(12,10,9,0.9)',
+      'color:#f4ece1',
+      // 16px or larger, or iOS zooms the page when the field takes focus.
+      'font:500 16px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'letter-spacing:0.12em',
+      'text-align:center',
+      'width:100%',
+      'box-sizing:border-box',
+    ].join(';');
+
+    const joinButton = document.createElement('button');
+    joinButton.type = 'button';
+    joinButton.textContent = 'Join';
+    joinButton.style.cssText = [
+      'padding:14px 22px',
+      'border-radius:999px',
+      'border:1px solid rgba(176,122,69,0.35)',
+      'background:transparent',
+      'color:#e8a33d',
+      'font:700 13.5px/1 system-ui, -apple-system, sans-serif',
+      'letter-spacing:0.08em',
+      'text-transform:uppercase',
+      'cursor:pointer',
+      '-webkit-tap-highlight-color:transparent',
+    ].join(';');
+
+    const submit = (): void => {
+      const code = this.#joinInput.value;
+      if (!code.trim()) return;
+      onJoinCode(code);
+    };
+    joinButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (this.#gate.blocked(event)) return;
+      submit();
+    });
+    // Pressing Go on the phone keyboard should work as well as the button.
+    this.#joinInput.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+      if (event.key === 'Enter') submit();
+    });
+
+    this.#joinBox.append(joinLabel, this.#joinInput, joinButton);
+
+    this.#root.append(this.#title, this.#status, this.#linkBox, this.#joinBox, cancel);
     container.append(this.#root);
+  }
+
+  /** Report a failed code without wiping what the player typed. */
+  setJoinError(message: string): void {
+    this.#status.textContent = message;
+    this.#joinInput.focus();
+    this.#joinInput.select();
   }
 
   /**
@@ -168,6 +266,7 @@ export class OnlineLobby {
     this.#linkText.textContent = link;
     this.#code.textContent = `Room ${code.replace('carrom-', '')}`;
     this.#linkBox.style.display = 'flex';
+    this.#joinBox.style.display = 'flex';
     this.#root.style.display = 'flex';
   }
 
@@ -177,6 +276,8 @@ export class OnlineLobby {
     this.#title.textContent = 'Joining game';
     this.#status.textContent = 'Connecting to the other player…';
     this.#linkBox.style.display = 'none';
+    // Already joining; offering a second code here would only confuse.
+    this.#joinBox.style.display = 'none';
     this.#root.style.display = 'flex';
   }
 

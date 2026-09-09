@@ -166,11 +166,15 @@ export class Game {
     this.#soundToggle = new SoundToggle(container, this.#audio);
 
     this.#net = new NetworkManager(this.events);
-    this.#lobby = new OnlineLobby(container, () => {
-      this.#net.disconnect();
-      this.#lobby.hide();
-      this.showMenu();
-    });
+    this.#lobby = new OnlineLobby(
+      container,
+      () => {
+        this.#net.disconnect();
+        this.#lobby.hide();
+        this.showMenu();
+      },
+      (code) => this.#joinByCode(code),
+    );
     this.#wireNetwork();
 
     this.#victory = new VictoryScreen(
@@ -473,6 +477,25 @@ export class Game {
         `Could not create a room: ${error instanceof Error ? error.message : 'unknown error'}`,
       );
     }
+  }
+
+  /**
+   * Join from a code the player typed, rather than a link they followed.
+   *
+   * The host is already hosting an empty room of their own by the time they
+   * reach this box, so that has to be torn down first — otherwise the device
+   * would be waiting for a guest and joining someone else at the same time.
+   */
+  #joinByCode(input: string): void {
+    const roomId = NetworkManager.parseRoomCode(input);
+    if (roomId === null) {
+      this.#lobby.setJoinError(
+        'That does not look like a room code. It is six letters and numbers, like “a1b2c3”.',
+      );
+      return;
+    }
+    this.#net.disconnect();
+    void this.joinOnline(roomId);
   }
 
   /** Join a room from a shared link. Called at boot when `?join=` is present. */

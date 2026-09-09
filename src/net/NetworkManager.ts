@@ -150,13 +150,48 @@ export class NetworkManager {
     return url.toString();
   }
 
-  /** Room id from the current URL, if this page was opened from a share link. */
+  /**
+   * Room id from the current URL, if this page was opened from a share link.
+   *
+   * The hash is accepted as well as the query. A link passes through a lot of
+   * hands on its way to the other player — messaging apps, redirectors, a
+   * static host's own rewriting — and a query string is the part most likely
+   * to be dropped along the way. Reading both costs nothing and means one more
+   * route survives.
+   */
   static roomFromUrl(): string | null {
     try {
-      return new URL(window.location.href).searchParams.get('join');
+      const url = new URL(window.location.href);
+      const found = url.searchParams.get('join') ?? roomFromHash(url.hash);
+      return found ? NetworkManager.parseRoomCode(found) : null;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Make sense of whatever the player pasted.
+   *
+   * A code reaches the other person by whatever route they had to hand, so it
+   * arrives as a bare code, as the full room id, or as an entire link pasted
+   * back out of a chat. All three mean the same thing, and refusing two of
+   * them would be pedantry at the exact moment the player is already having
+   * trouble.
+   */
+  static parseRoomCode(input: string): string | null {
+    const text = input.trim();
+    if (!text) return null;
+
+    let raw = text;
+    try {
+      const url = new URL(text);
+      raw = url.searchParams.get('join') ?? roomFromHash(url.hash) ?? text;
+    } catch {
+      // Not a URL; treat it as a code.
+    }
+
+    const code = raw.trim().toLowerCase().replace(/^carrom-/, '');
+    return /^[a-z0-9]{4,12}$/.test(code) ? `carrom-${code}` : null;
   }
 
   /**
@@ -395,3 +430,11 @@ export class NetworkManager {
 
 /** Board point helper, kept here so callers need not import types twice. */
 export type { BoardPoint };
+
+/** `#join=xyz`, or a bare `#xyz`, as a room id. */
+function roomFromHash(hash: string): string | null {
+  const text = hash.replace(/^#/, '');
+  if (!text) return null;
+  const match = /(?:^|&)join=([^&]+)/.exec(text);
+  return match?.[1] ?? text;
+}
