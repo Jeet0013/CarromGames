@@ -42,6 +42,7 @@ import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
 import { COINS_PER_PLAYER } from '../gameplay/RuleSet';
+import { Haptics } from '../ui/Haptics';
 import { Environment } from '../rendering/Environment';
 import { Lighting } from '../rendering/Lighting';
 import { Renderer } from '../rendering/Renderer';
@@ -91,6 +92,7 @@ export class Game {
   readonly #pocketEffect: PocketEffect;
   readonly #victory: VictoryScreen;
   readonly #powder: PowderEffect;
+  readonly #haptics: Haptics;
   readonly #powderCan: PowderCan;
   readonly #cinematic: CinematicCameraManager;
   readonly #net: NetworkManager;
@@ -160,6 +162,10 @@ export class Game {
 
     // Supplies camera offsets only; CameraManager keeps ownership of position.
     this.#cinematic = new CinematicCameraManager(this.events, this.#camera, this.#pieces);
+
+    // Feel, on the two events worth feeling. Android only in practice; an
+    // iPhone gets the sound and nothing else, which is the whole fallback.
+    this.#haptics = new Haptics(this.events);
 
     this.#powder = new PowderEffect();
     this.#scene.addPermanent(this.#powder.group);
@@ -895,7 +901,17 @@ export class Game {
     // The visual reads the physics world's own powder level, so what is shown
     // and what the coins feel can never drift apart.
     const powderLevel = this.#physics.powderLevel;
-    this.#powder.update(frameDelta, powderLevel);
+    // Dust off the striker while it runs, so a slick board looks slick rather
+    // than just behaving strangely.
+    const striker = this.#pieces.striker;
+    const strikerMotion = striker.active
+      ? {
+          x: striker.position.x,
+          z: striker.position.z,
+          speed: this.#physics.speedOf(striker.id),
+        }
+      : null;
+    this.#powder.update(frameDelta, powderLevel, strikerMotion);
     this.#powderCan.setLevel(powderLevel);
     this.#physicsDebug?.update();
     this.#renderer.render(this.#scene.scene, this.#camera.camera);
@@ -962,6 +978,7 @@ export class Game {
     this.#net.disconnect();
     this.#lobby.dispose();
     this.#powderCan.dispose();
+    this.#haptics.dispose();
     this.#powder.dispose();
     this.#victory.dispose();
     this.#pocketEffect.dispose();

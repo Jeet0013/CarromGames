@@ -2,9 +2,15 @@
  * Powder on the board.
  *
  * A pale sheen laid over the playing surface that fades as the powder wears
- * off, plus a puff of dust when it is scattered. The visual is driven by the
- * physics world's own powder level, so what the player sees and what the coins
- * feel can never disagree.
+ * off, a puff of dust when it is scattered, and a trail kicked up behind the
+ * striker as it runs. All three are driven by the physics world's own powder
+ * level, so what the player sees and what the coins feel can never disagree.
+ *
+ * The trail is the one that says *why* the shot is behaving oddly. A powdered
+ * board makes the striker hold its pace through two rails, which without a cue
+ * just looks like the physics being generous. Dust coming off it says the
+ * board is slick — the same information, arriving as something seen rather
+ * than something inferred.
  */
 
 import * as THREE from 'three';
@@ -14,12 +20,36 @@ import { BOARD_CONFIG } from '../board/BoardConfig';
 const PUFF_PARTICLES = 40;
 const PUFF_SECONDS = 1.4;
 
+/**
+ * The trail behind a moving striker.
+ *
+ * A ring buffer: emitting overwrites the oldest particle rather than growing,
+ * so a long shot costs exactly the same as a short one and there is nothing to
+ * allocate inside the frame loop.
+ */
+const TRAIL_PARTICLES = 90;
+/** How long one speck hangs before it has faded out. */
+const TRAIL_SECONDS = 0.55;
+/**
+ * Below this the striker is rolling to a stop, and dust off a nearly-stopped
+ * piece reads as smoke from a fire rather than powder off a board.
+ */
+const TRAIL_MIN_SPEED = 2.2;
+/** Specks per second at full tilt. Scaled by speed and by powder remaining. */
+const TRAIL_RATE = 90;
+
 export class PowderEffect {
   readonly #group = new THREE.Group();
   readonly #sheen: THREE.Mesh;
   readonly #puff: THREE.Points;
   readonly #positions: Float32Array;
   readonly #velocities: Float32Array;
+  readonly #trail: THREE.Points;
+  readonly #trailPositions: Float32Array;
+  /** Seconds of life left per speck; 0 means the slot is free. */
+  readonly #trailLife: Float32Array;
+  #trailNext = 0;
+  #trailBudget = 0;
   readonly #disposables: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [];
   #puffElapsed = PUFF_SECONDS;
 
@@ -67,6 +97,36 @@ export class PowderEffect {
     this.#puff.frustumCulled = false;
     this.#group.add(this.#puff);
     this.#disposables.push(puffGeometry, puffMaterial);
+
+    // ── Striker trail ─────────────────────────────────────────────────────
+    this.#trailPositions = new Float32Array(TRAIL_PARTICLES * 3);
+    this.#trailLife = new Float32Array(TRAIL_PARTICLES);
+    // Park every speck under the board until it is first used, so the initial
+    // frame does not show a cluster of dust at the origin.
+    for (let i = 0; i < TRAIL_PARTICLES; i += 1) this.#trailPositions[i * 3 + 1] = -999;
+
+    const trailGeometry = new THREE.BufferGeometry();
+    trailGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.#trailPositions, 3),
+    );
+
+    const trailMaterial = new THREE.PointsMaterial({
+      // Smaller than the scatter puff: this is what a coin kicks up, not a
+      // handful thrown across the board.
+      size: 0.13,
+      map: this.#dustTexture(),
+      color: 0xfff8ec,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    this.#trail = new THREE.Points(trailGeometry, trailMaterial);
+    this.#trail.frustumCulled = false;
+    this.#group.add(this.#trail);
+    this.#disposables.push(trailGeometry, trailMaterial);
   }
 
   get group(): THREE.Group {
@@ -116,8 +176,17 @@ export class PowderEffect {
     this.#puff.geometry.getAttribute('position').needsUpdate = true;
   }
 
-  /** @param level 0–1 powder remaining, taken from the physics world. */
-  update(delta: number, level: number): void {
+  /**
+   * @param level   0–1 powder remaining, taken from the physics world.
+   * @param striker Where the striker is and how fast, or null when it is not
+   *   in play. Dust is only kicked up while there is powder to kick.
+   */
+  update(
+    delta: number,
+    level: number,
+    striker: { readonly x: number; readonly z: number; readonly speed: number } | null = null,
+  ): void {
+    this.#updateTrail(delta, level, striker);
     // Peak opacity is deliberately low — this is a dusting, not a snowfall.
     (this.#sheen.material as THREE.MeshBasicMaterial).opacity = level * 0.16;
     this.#sheen.visible = level > 0.002;
@@ -142,6 +211,66 @@ export class PowderEffect {
     const fade = 1 - this.#puffElapsed / PUFF_SECONDS;
     (this.#puff.material as THREE.PointsMaterial).opacity = 0.5 * fade;
     this.#puff.geometry.getAttribute('position').needsUpdate = true;
+  }
+
+  /**
+   * Emit behind the striker, then age every speck.
+   *
+   * Emission is a budget carried across frames rather than a per-frame count,
+   * so the rate is the same whether the game is running at 120 fps or
+   * struggling at 30 — otherwise a slow device draws a sparser trail, which is
+   * exactly backwards from what it needs.
+   */
+  #updateTrail(
+    delta: number,
+    level: number,
+    striker: { readonly x: number; readonly z: number; readonly speed: number } | null,
+  ): void {
+    const p = this.#trailPositions;
+    const life = this.#trailLife;
+
+    if (striker && level > 0.02 && striker.speed > TRAIL_MIN_SPEED) {
+      // Faster and freshly powdered means more dust; both taper to nothing.
+      const intensity = Math.min(1, (striker.speed - TRAIL_MIN_SPEED) / 12) * level;
+      this.#trailBudget += TRAIL_RATE * intensity * delta;
+
+      while (this.#trailBudget >= 1) {
+        this.#trailBudget -= 1;
+        const o = this.#trailNext * 3;
+        // A little scatter, so the trail is a plume rather than a wire.
+        p[o] = striker.x + (Math.random() - 0.5) * 0.16;
+        p[o + 1] = 0.02 + Math.random() * 0.05;
+        p[o + 2] = striker.z + (Math.random() - 0.5) * 0.16;
+        life[this.#trailNext] = TRAIL_SECONDS;
+        this.#trailNext = (this.#trailNext + 1) % TRAIL_PARTICLES;
+      }
+    } else {
+      // Never let an unspent budget dump a burst of dust on the next shot.
+      this.#trailBudget = 0;
+    }
+
+    let alive = 0;
+    for (let i = 0; i < TRAIL_PARTICLES; i += 1) {
+      const remaining = life[i] ?? 0;
+      if (remaining <= 0) continue;
+
+      const next = remaining - delta;
+      life[i] = Math.max(0, next);
+      if (next <= 0) {
+        // Park it, rather than leave a stale speck at full brightness.
+        p[i * 3 + 1] = -999;
+        continue;
+      }
+
+      alive += 1;
+      // Settling, not billowing: powder falls back to the board.
+      p[i * 3 + 1] = Math.max(0.012, (p[i * 3 + 1] ?? 0) - delta * 0.06);
+    }
+
+    this.#trail.visible = alive > 0;
+    if (alive > 0 || this.#trail.geometry.getAttribute('position').needsUpdate) {
+      this.#trail.geometry.getAttribute('position').needsUpdate = true;
+    }
   }
 
   dispose(): void {

@@ -110,12 +110,7 @@ export class PhysicsWorld {
 
     this.#collisions = new CollisionSystem(events, {
       resolveOwner: (handle) => this.#colliderOwners.get(handle),
-      speedOf: (id) => {
-        const body = this.#bodies.get(id)?.body;
-        if (!body) return 0;
-        const v = body.linvel();
-        return Math.hypot(v.x, v.z);
-      },
+      speedOf: (id) => this.speedOf(id),
     });
 
     this.#createRails();
@@ -245,6 +240,20 @@ export class PhysicsWorld {
 
   get frictionScale(): number {
     return this.#frictionScale;
+  }
+
+  /**
+   * Planar speed of one body, or 0 if it is not in the world.
+   *
+   * Read by the powder trail, which needs to know how hard the striker is
+   * travelling. The collision system already computed this inline for its own
+   * purposes; this is the same thing with a name.
+   */
+  speedOf(id: string): number {
+    const body = this.#bodies.get(id)?.body;
+    if (!body) return 0;
+    const v = body.linvel();
+    return Math.hypot(v.x, v.z);
   }
 
   /**

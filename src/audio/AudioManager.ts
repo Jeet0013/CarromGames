@@ -17,6 +17,7 @@
  * into the rules.
  */
 
+import { PieceKind } from '../core/types';
 import type { EventBus } from '../core/EventBus';
 import { PHYSICS_CONFIG } from '../physics/PhysicsConfig';
 
@@ -111,7 +112,26 @@ export class AudioManager {
       else this.playCoinHit(impact, a === 'striker' || b === 'striker');
     });
 
-    events.on('pocket:scored', () => this.playPocket());
+    /*
+     * A pocket is two sounds, not one.
+     *
+     * `playPocket` is the physical event — the coin dropping through. The
+     * crowd is the *judgement* of it, and the two are separate because they
+     * are not always both true: the striker going down is a pocket and a
+     * foul, and cheering it would be the game congratulating you for losing a
+     * turn.
+     *
+     * `playCheer` already existed, written for exactly this and never wired to
+     * anything.
+     */
+    events.on('pocket:scored', ({ kind }) => {
+      // The crowd reacts to a coin, not to the striker going down — that is a
+      // foul, and it gets the boo below instead.
+      this.playPocket(kind !== PieceKind.Striker);
+    });
+
+    // Every foul the rules recognise, including the striker going down.
+    events.on('rules:foul', () => this.playBoo());
 
     /*
      * Browsers refuse to start audio without a user gesture.
@@ -677,7 +697,14 @@ export class AudioManager {
    * one shot and each deserves to be heard, since it is the moment the player
    * is actually waiting for.
    */
-  playPocket(): void {
+  /**
+   * A coin dropping through a pocket.
+   *
+   * @param celebrate Whether the crowd reacts. False for the striker, which is
+   *   a foul — this cheered unconditionally before, so the game applauded a
+   *   player for losing their turn.
+   */
+  playPocket(celebrate = true): void {
     if (!this.#settings.sfxEnabled) return;
     const context = this.#context;
     if (!context || !this.#master) return;
@@ -716,7 +743,7 @@ export class AudioManager {
     thud.stop(now + 0.42);
     this.#trackVoice(now + 0.42);
 
-    this.playCheer();
+    if (celebrate) this.playCheer();
   }
 
   /**
@@ -818,6 +845,63 @@ export class AudioManager {
   /** True when audio exists and is actually running. Surfaced in the UI. */
   get isRunning(): boolean {
     return this.#context?.state === 'running';
+  }
+
+  /**
+   * The crowd's disapproval.
+   *
+   * Built from the same crowd buffer as the cheer, which is what makes them
+   * recognisably the same room. Three things separate them:
+   *
+   * - **Low-passed, not band-passed.** A boo lives in the chest, a cheer in
+   *   the head. Rolling off everything above 700 Hz is most of the character.
+   * - **It sags.** A downward pitch bend on the playback rate, because a boo
+   *   is a held vowel that loses support, where a cheer rises.
+   * - **It starts immediately.** A crowd takes a moment to celebrate and no
+   *   time at all to groan.
+   *
+   * Mixed below the cheer on purpose: this fires on every foul, including the
+   * common ones, and a punishment sound that is louder than the reward gets
+   * old inside one match.
+   */
+  playBoo(): void {
+    if (!this.#settings.sfxEnabled) return;
+    const context = this.#context;
+    if (!context || !this.#master) return;
+
+    const master = this.#master;
+    const now = context.currentTime;
+
+    this.#crowdBuffer ??= this.#buildCrowd(context);
+    const crowd = context.createBufferSource();
+    crowd.buffer = this.#crowdBuffer;
+    // Slower playback drops the whole crowd into a lower register; the ramp
+    // is the sag.
+    crowd.playbackRate.setValueAtTime(0.82, now);
+    crowd.playbackRate.linearRampToValueAtTime(0.66, now + 0.9);
+
+    const lowpass = context.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 700;
+    lowpass.Q.value = 0.6;
+
+    // A shallow dip around 2 kHz takes the last of the hiss out, so it reads
+    // as voices in a room rather than filtered noise.
+    const notch = context.createBiquadFilter();
+    notch.type = 'peaking';
+    notch.frequency.value = 2000;
+    notch.gain.value = -8;
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.11, now + 0.07);
+    gain.gain.setValueAtTime(0.11, now + 0.42);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
+
+    crowd.connect(lowpass).connect(notch).connect(gain).connect(master);
+    crowd.start(now);
+    crowd.stop(now + 1.15);
+    this.#trackVoice(now + 1.15);
   }
 
   dispose(): void {
