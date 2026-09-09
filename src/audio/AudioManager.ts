@@ -126,14 +126,51 @@ export class AudioManager {
      * `playCheer` already existed, written for exactly this and never wired to
      * anything.
      */
-    events.on('pocket:scored', ({ kind }) => {
-      // The crowd reacts to a coin, not to the striker going down — that is a
-      // foul, and it gets the boo below instead.
-      this.playPocket(kind !== PieceKind.Striker);
+    /*
+     * A pocket is two sounds, and they happen at different times.
+     *
+     * `playPocket` is the physical event — a coin dropping through — and it
+     * plays the instant it happens, because that is when it happens.
+     *
+     * The crowd is the *judgement*, and a judgement cannot be made yet. When
+     * `pocket:scored` fires, nobody knows whether that coin was yours. Pocket
+     * an opponent's coin and this event is identical to pocketing your own,
+     * yet one is a point and the other is a foul — so cheering here applauded
+     * a foul and then booed it half a second later.
+     *
+     * `TurnManager` emits every foul before `shot:resolved`, so by the time
+     * the shot resolves the verdict is in. That is where the crowd reacts.
+     */
+    events.on('shot:fired', () => {
+      this.#pottedThisShot = false;
+      this.#fouledThisShot = false;
     });
 
-    // Every foul the rules recognise, including the striker going down.
-    events.on('rules:foul', () => this.playBoo());
+    events.on('pocket:scored', ({ kind }) => {
+      this.playPocket();
+      // The striker going down is never worth cheering; anything else is,
+      // unless a foul follows it.
+      if (kind !== PieceKind.Striker) this.#pottedThisShot = true;
+    });
+
+    // Every foul the rules recognise: the striker going down, pocketing a coin
+    // that was not yours, no contact, an illegal placement.
+    events.on('rules:foul', () => {
+      this.#fouledThisShot = true;
+      this.playBoo();
+    });
+
+    events.on('shot:resolved', () => {
+      if (this.#pottedThisShot && !this.#fouledThisShot) this.playCheer();
+    });
+
+    /*
+     * The winning shot never reaches `shot:resolved`.
+     *
+     * `TurnManager` returns early once it has a winner, so without this the
+     * biggest moment in a match would be the one that got no applause.
+     */
+    events.on('rules:gameComplete', () => this.playCheer());
 
     /*
      * Browsers refuse to start audio without a user gesture.
@@ -318,6 +355,10 @@ export class AudioManager {
    * use. Decoding is async and cannot happen before the context exists, so the
    * first play of each may be silent; every one after is immediate.
    */
+  /** Whether this shot potted anything, and whether it fouled. */
+  #pottedThisShot = false;
+  #fouledThisShot = false;
+
   readonly #samples = new Map<string, AudioBuffer>();
   readonly #decoding = new Set<string>();
 
@@ -758,13 +799,13 @@ export class AudioManager {
    * is actually waiting for.
    */
   /**
-   * A coin dropping through a pocket.
+   * A coin dropping through a pocket. The sound of the event, nothing more.
    *
-   * @param celebrate Whether the crowd reacts. False for the striker, which is
-   *   a foul — this cheered unconditionally before, so the game applauded a
-   *   player for losing their turn.
+   * The crowd's reaction used to live in here, which put the question of
+   * *whether* to celebrate inside the sound of the coin. That is a rules
+   * question, and it is now answered where the rules are known.
    */
-  playPocket(celebrate = true): void {
+  playPocket(): void {
     if (!this.#settings.sfxEnabled) return;
     const context = this.#context;
     if (!context || !this.#master) return;
@@ -803,7 +844,6 @@ export class AudioManager {
     thud.stop(now + 0.42);
     this.#trackVoice(now + 0.42);
 
-    if (celebrate) this.playCheer();
   }
 
   /**
