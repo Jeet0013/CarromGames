@@ -20,6 +20,7 @@
  * same serializable struct the pointer and the AI already produce.
  */
 
+import { HAS_RELAY, ICE_SERVERS, type IceServer } from './NetConfig';
 import type { EventBus } from '../core/EventBus';
 import type { BoardPoint, PlayerSlot, ShotCommand } from '../core/types';
 
@@ -151,6 +152,20 @@ export class NetworkManager {
   }
 
   /**
+   * Whether this page's address means anything on someone else's device.
+   *
+   * See `isShareableOrigin`, which holds the actual rule so it can be tested
+   * without a browser.
+   */
+  static get shareLinkReachable(): boolean {
+    try {
+      return isShareableOrigin(window.location.href);
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Room id from the current URL, if this page was opened from a share link.
    *
    * The hash is accepted as well as the query. A link passes through a lot of
@@ -194,14 +209,6 @@ export class NetworkManager {
     return /^[a-z0-9]{4,12}$/.test(code) ? `carrom-${code}` : null;
   }
 
-  /**
-   * Publish a status change.
-   *
-   * Guarded against repeats, because "connected" genuinely arrives twice: once
-   * when the data channel opens and again when the peer's `hello`/`welcome`
-   * lands on it. The listener starts a match, so firing twice reset the board
-   * out from under a game that had already begun.
-   */
   #setStatus(status: NetStatus, detail?: string): void {
     if (status === this.#status && status !== 'error') return;
     this.#status = status;
@@ -233,6 +240,9 @@ export class NetworkManager {
     // paste, so a full UUID would be hostile.
     const peer = new Peer(id as string, {
       debug: 0,
+      // Supplied explicitly rather than left to the library's defaults, so
+      // adding a relay is an edit to one config file — see `NetConfig`.
+      config: { iceServers: ICE_SERVERS as IceServer[] },
     }) as unknown as PeerLike;
     return peer;
   }
@@ -289,9 +299,11 @@ export class NetworkManager {
     return new Promise<void>((resolve, reject) => {
       const deadline = window.setTimeout(() => {
         if (this.#status === 'connected') return;
-        const message =
-          'Could not reach the other player. A phone network often blocks a ' +
-          'direct connection — try both devices on the same Wi-Fi.';
+        const message = HAS_RELAY
+          ? 'Could not reach the other player. Check the room is still open on ' +
+            'their device.'
+          : 'Could not reach the other player. Some mobile networks refuse a ' +
+            'direct connection — try both devices on the same Wi-Fi.';
         this.#reportError(message);
         reject(new Error(message));
       }, JOIN_TIMEOUT_MS);
@@ -437,4 +449,46 @@ function roomFromHash(hash: string): string | null {
   if (!text) return null;
   const match = /(?:^|&)join=([^&]+)/.exec(text);
   return match?.[1] ?? text;
+}
+
+/**
+ * Can a link to this address be opened by anyone but us?
+ *
+ * The share link is built from wherever the game happens to be loaded, and a
+ * great many of those places are private to one machine: a dev server on a LAN
+ * address, `localhost`, or a file opened straight off disk. The link is then
+ * perfectly well-formed and completely useless — the friend taps it, gets
+ * nothing, and the fault appears to lie with the game.
+ *
+ * Kept pure and given a URL rather than reading `window`, so the rule can be
+ * tested directly instead of inferred from a browser's behaviour.
+ */
+export function isShareableOrigin(href: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    // Unparseable is not evidence of anything; do not cry wolf.
+    return true;
+  }
+
+  if (url.protocol === 'file:') return false;
+
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) return false;
+  if (host === '127.0.0.1' || host === '::1') return false;
+  if (host.startsWith('127.')) return false;
+
+  // RFC 1918 and link-local: routable on this network, and nowhere else.
+  if (/^10\./.test(host)) return false;
+  if (/^192\.168\./.test(host)) return false;
+  if (/^169\.254\./.test(host)) return false;
+
+  const block = /^172\.(\d{1,3})\./.exec(host);
+  if (block) {
+    const second = Number(block[1]);
+    if (second >= 16 && second <= 31) return false;
+  }
+
+  return true;
 }

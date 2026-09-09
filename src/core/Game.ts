@@ -471,7 +471,11 @@ export class Game {
     try {
       this.#lobby.showHosting('Creating room…', '');
       const roomId = await this.#net.host();
-      this.#lobby.showHosting(this.#net.shareLink, roomId);
+      this.#lobby.showHosting(
+        this.#net.shareLink,
+        roomId,
+        NetworkManager.shareLinkReachable,
+      );
     } catch (error) {
       this.#lobby.setStatus(
         `Could not create a room: ${error instanceof Error ? error.message : 'unknown error'}`,

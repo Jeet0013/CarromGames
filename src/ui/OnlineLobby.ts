@@ -256,13 +256,23 @@ export class OnlineLobby {
     }
   }
 
-  showHosting(link: string, code: string): void {
+  /**
+   * @param reachable Whether this page's address means anything on another
+   *   device. When it does not, saying so is the whole job — the link is
+   *   well-formed and useless, and without a word here the friend taps it,
+   *   gets nothing, and the game looks broken.
+   */
+  showHosting(link: string, code: string, reachable = true): void {
     this.#visible = true;
     this.#gate.open();
     this.#link = link;
     this.#title.textContent = 'Invite a player';
-    this.#status.textContent =
-      'Send this link. The game starts as soon as they open it — keep this page open.';
+    this.#status.textContent = reachable
+      ? 'Send this link. The game starts as soon as they open it — keep this page open.'
+      : 'This address only exists on your own network, so the link will not open ' +
+        'for anyone else. Put the game on a public https address to play across ' +
+        'the internet — or, on the same Wi-Fi, have them type the room code below.';
+    this.#status.style.color = reachable ? '#9a8d7d' : '#e8a33d';
     this.#linkText.textContent = link;
     this.#code.textContent = `Room ${code.replace('carrom-', '')}`;
     this.#linkBox.style.display = 'flex';
