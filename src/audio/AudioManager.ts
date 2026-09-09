@@ -756,7 +756,11 @@ export class AudioManager {
    */
   #buildCrowd(context: AudioContext): AudioBuffer {
     const rate = context.sampleRate;
-    const length = Math.floor(rate * 1.6);
+    // 2.8s, up from 1.6. The cheer now runs a full two seconds and the boo
+    // plays this back slowed, which consumes it faster than real time — a
+    // shorter buffer ran out mid-envelope and the crowd cut off rather than
+    // faded.
+    const length = Math.floor(rate * 2.8);
     const buffer = context.createBuffer(2, length, rate);
 
     for (let channel = 0; channel < 2; channel += 1) {
@@ -808,16 +812,26 @@ export class AudioManager {
     bandpass.Q.value = 0.75;
 
     const crowdGain = context.createGain();
-    // Swells rather than starts: a crowd takes a moment to react.
+    /*
+     * Two seconds, and roughly twice as loud as it was.
+     *
+     * It ran 1.35s at 0.16 gain, under a chime, band-limited — audible in a
+     * quiet room and inaudible on a phone at arm's length, which is where this
+     * game is played. It swells, holds through the applause, and falls away.
+     */
     crowdGain.gain.setValueAtTime(0.0001, now);
-    crowdGain.gain.exponentialRampToValueAtTime(0.16, now + 0.16);
-    crowdGain.gain.setValueAtTime(0.16, now + 0.5);
-    crowdGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.35);
+    crowdGain.gain.exponentialRampToValueAtTime(0.34, now + 0.14);
+    crowdGain.gain.setValueAtTime(0.34, now + 1.15);
+    crowdGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.0);
 
     crowd.connect(bandpass).connect(crowdGain).connect(master);
     crowd.start(now);
-    crowd.stop(now + 1.4);
-    this.#trackVoice(now + 1.4);
+    crowd.stop(now + 2.05);
+    this.#trackVoice(now + 2.05);
+
+    // The claps themselves. Without these the crowd is a wash of voices; a
+    // clap is a transient, and applause is a lot of transients at once.
+    this.#playApplause(context, master, now);
 
     // ── Chime ─────────────────────────────────────────────────────────────
     notes.forEach((frequency, index) => {
@@ -864,6 +878,48 @@ export class AudioManager {
    * common ones, and a punishment sound that is louder than the reward gets
    * old inside one match.
    */
+  /**
+   * Individual claps, scattered across the cheer.
+   *
+   * A crowd swell is voices; applause is hands, and hands are transients. Each
+   * clap is a very short noise burst through a high bandpass — the crack of
+   * two palms, with no tail.
+   *
+   * They are dense at the front and thin out, which is what a real crowd does:
+   * everyone starts together and then falls out of step. The timing is jittered
+   * so no two claps land on the same instant, because a grid of them reads as a
+   * machine.
+   */
+  #playApplause(context: AudioContext, master: AudioNode, now: number): void {
+    const CLAPS = 34;
+    const SPAN = 1.7;
+
+    for (let i = 0; i < CLAPS; i += 1) {
+      // Squared, so the density falls off rather than spreading evenly.
+      const progress = (i / CLAPS) ** 0.55;
+      const at = now + 0.04 + progress * SPAN + Math.random() * 0.05;
+
+      const burst = this.#noise(context);
+      const band = context.createBiquadFilter();
+      band.type = 'bandpass';
+      // Each pair of hands is a slightly different size.
+      band.frequency.value = 1500 + Math.random() * 2200;
+      band.Q.value = 0.9;
+
+      const gain = context.createGain();
+      // Later claps are quieter: the crowd is winding down, not stopping dead.
+      const level = 0.16 * (1 - progress * 0.55) * (0.6 + Math.random() * 0.4);
+      gain.gain.setValueAtTime(level, at);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.05);
+
+      burst.connect(band).connect(gain).connect(master);
+      burst.start(at);
+      burst.stop(at + 0.06);
+    }
+
+    this.#trackVoice(now + SPAN + 0.2);
+  }
+
   playBoo(): void {
     if (!this.#settings.sfxEnabled) return;
     const context = this.#context;
@@ -893,15 +949,18 @@ export class AudioManager {
     notch.gain.value = -8;
 
     const gain = context.createGain();
+    // 1.8s and more than twice the level it started at — still under the
+    // cheer, because this fires on every foul and a punishment that shouts
+    // gets old inside one match.
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.11, now + 0.07);
-    gain.gain.setValueAtTime(0.11, now + 0.42);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
+    gain.gain.exponentialRampToValueAtTime(0.26, now + 0.06);
+    gain.gain.setValueAtTime(0.26, now + 1.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
 
     crowd.connect(lowpass).connect(notch).connect(gain).connect(master);
     crowd.start(now);
-    crowd.stop(now + 1.15);
-    this.#trackVoice(now + 1.15);
+    crowd.stop(now + 1.85);
+    this.#trackVoice(now + 1.85);
   }
 
   dispose(): void {

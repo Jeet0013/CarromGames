@@ -62,8 +62,16 @@ const SURFACES = {
   floor: 0x140f0c,
 } as const;
 
-/** Blur applied while pre-filtering. A little softening hides the box edges. */
-const BAKE_BLUR = 0.05;
+/**
+ * Blur applied while pre-filtering. A little softening hides the box edges.
+ *
+ * 0.038, not 0.05. Three's PMREM blur is sampled, and the sample count scales
+ * with the radius: at 0.05 it asked for 25 taps against a hard ceiling of 20,
+ * so it clipped the blur and logged about it on every load. The clipped result
+ * looked fine, which is the problem — a warning nobody acts on is a warning
+ * that hides the next one.
+ */
+const BAKE_BLUR = 0.038;
 
 export class Environment {
   #texture: THREE.Texture | null = null;

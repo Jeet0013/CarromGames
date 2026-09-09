@@ -44,7 +44,15 @@ export class SoundToggle {
 
   #render(): void {
     const on = this.#audio.settings.sfxEnabled;
-    this.#button.textContent = on ? '🔊' : '🔇';
+    /*
+     * Drawn, not an emoji.
+     *
+     * An emoji is a different typeface on every platform — sized, coloured
+     * and vertically aligned by that platform, not by us. Next to four
+     * hand-drawn marks it was the one control that looked borrowed, and on the
+     * dark disc it rendered pale and flat.
+     */
+    this.#button.innerHTML = on ? SPEAKER_ON : SPEAKER_OFF;
     this.#button.setAttribute('aria-label', on ? 'Mute sound' : 'Unmute sound');
     this.#button.style.opacity = on ? '1' : '0.55';
   }
@@ -59,3 +67,16 @@ export class SoundToggle {
     this.#button.remove();
   }
 }
+
+/** Speaker with two waves. One stroke weight, matching the other marks. */
+const SPEAKER_ON = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M4 9.5h3.2L12 5.6v12.8L7.2 14.5H4z"/>
+  <path d="M15.6 9.2a4 4 0 0 1 0 5.6"/>
+  <path d="M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/>
+</svg>`;
+
+/** The same speaker, struck through — the state, not a different object. */
+const SPEAKER_OFF = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M4 9.5h3.2L12 5.6v12.8L7.2 14.5H4z"/>
+  <path d="M16 9.8l5 4.4M21 9.8l-5 4.4"/>
+</svg>`;

@@ -446,6 +446,18 @@ export function injectScreenSheet(): void {
  * colours were literals sitting outside the palette. Saying it once fixes all
  * four and means the fifth cannot drift.
  */
+/*
+ * Contrast, because these sit on a nearly black table.
+ *
+ * The first version used the same faint brass as a divider rule — 0.28 alpha,
+ * weaker than the 0.45 these buttons had before — over a near-black fill. On a
+ * desktop that reads as restraint; on a phone, against the dark wood, it reads
+ * as nothing at all, and the sound and powder controls were reported missing.
+ *
+ * Three changes, all pulling the same way: a brass ring at full strength, a
+ * lighter fill so the disc is a disc rather than a hole, and a faint warm
+ * halo so it lifts off the table instead of sinking into it.
+ */
 .cx-icon-btn {
   display: grid;
   place-items: center;
@@ -453,12 +465,15 @@ export function injectScreenSheet(): void {
   height: 46px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid ${COLORS.brassDim};
-  background: linear-gradient(168deg, rgba(31, 25, 20, 0.9), rgba(17, 14, 11, 0.92));
-  color: ${COLORS.inkSoft};
+  border: 1px solid rgba(201, 152, 47, 0.62);
+  background: linear-gradient(168deg, rgba(48, 39, 30, 0.94), rgba(26, 21, 16, 0.96));
+  color: #efe3cd;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 226, 160, 0.16);
   transition: transform 120ms ease, color 180ms ease, border-color 180ms ease, background-color 180ms ease;
 }
 
