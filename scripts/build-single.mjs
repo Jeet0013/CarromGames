@@ -101,6 +101,26 @@ try {
   // No favicon on disk; the page is still valid without one.
 }
 
+/*
+ * Inline the boot logo the same way.
+ *
+ * The boot screen is markup in index.html, drawn before any of the bundle has
+ * run, so it cannot reference an asset the bundler inlined. In this artifact
+ * there is nowhere to fetch `/boot-logo.png` from either — a single file
+ * served as index.html has no siblings — so the src is rewritten to a data URI
+ * here. Without this the first screen a player sees is a broken image.
+ */
+let bootBody = body;
+try {
+  const png = await readFile('public/boot-logo.png');
+  bootBody = bootBody.replace(
+    'src="/boot-logo.png"',
+    `src="data:image/png;base64,${png.toString('base64')}"`,
+  );
+} catch {
+  // No boot logo on disk; the alt text stands in.
+}
+
 const html = `<meta charset="UTF-8">
 ${metas}
 ${favicon}<title>${title}</title>
@@ -110,7 +130,7 @@ html, body { height: 100%; overflow: hidden; }
 ${style}
 </style>
 
-<div id="app">${body}</div>
+<div id="app">${bootBody}</div>
 
 <script>
 ${safeScript}
