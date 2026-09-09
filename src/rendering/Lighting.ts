@@ -24,12 +24,20 @@ import { QUALITY_PRESETS } from '../config/GameConfig';
 import type { QualityTier } from '../core/types';
 
 export const LIGHTING_SETTINGS = {
-  /** Warm overhead lamp. */
+  /**
+   * Warm overhead lamp.
+   *
+   * 1.45, not the 2.4 it was. That figure was chosen when the key was doing
+   * nearly all the work; with the room supplying irradiance from every
+   * direction the two stacked and blew the playing bed — a light cream albedo
+   * — to flat white, taking the red coins to salmon with it. The key's job now
+   * is shaping and the cast shadow, not exposure.
+   */
   keyColor: 0xfff1dc,
-  keyIntensity: 2.4,
+  keyIntensity: 1.45,
   /** Cool fill from the opposite side, so shadowed wood does not read as black. */
   fillColor: 0xbcd4ff,
-  fillIntensity: 0.55,
+  fillIntensity: 0.32,
   /**
    * Sky/ground wash.
    *
@@ -38,7 +46,7 @@ export const LIGHTING_SETTINGS = {
    */
   skyColor: 0xdce6ff,
   groundColor: 0x3a2a1c,
-  hemiIntensity: 0.24,
+  hemiIntensity: 0.16,
   /** Enough to keep a fully occluded crevice off pure black, and no more. */
   ambientIntensity: 0.05,
   /** Restored on the low tier, where there is no environment to stand in. */

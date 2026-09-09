@@ -40,8 +40,28 @@ const TABLE = {
   color: 0x171210,
   /** Polished, but not lacquered: the board should be the glossiest thing. */
   roughness: 0.62,
-  /** Resolution of the baked light pool and grain. */
+  /** Resolution of the baked light pool. */
   textureSize: 1024,
+  /**
+   * How many times the grain tiles across the tabletop.
+   *
+   * The grain lives in its own texture rather than in the colour map because
+   * the two want opposite things: the light pool must span the whole table
+   * exactly once, and the grain must be small enough to read as wood. Stretched
+   * across 60 units to match the pool, it vanished — the table came out looking
+   * like a smooth plastic ramp.
+   */
+  grainRepeat: 7,
+  /** Shallow. Grain you can see the depth of is a carving, not a polish. */
+  bumpScale: 0.012,
+} as const;
+
+const CONTACT = {
+  /** How far the occlusion skirt reaches past the board, in board footprints. */
+  spread: 1.55,
+  /** Darkest value in the crevice where board meets table. */
+  opacity: 0.82,
+  size: 512,
 } as const;
 
 const BACKDROP = {
@@ -60,7 +80,7 @@ export class Room {
 
   constructor(quality: QualityTier) {
     this.#group.name = 'Room';
-    this.#group.add(this.#buildTable(quality), this.#buildBackdrop());
+    this.#group.add(this.#buildTable(quality), this.#buildContact(), this.#buildBackdrop());
   }
 
   get group(): THREE.Group {
@@ -84,12 +104,15 @@ export class Room {
 
     const map = bakeTableColor();
     const roughnessMap = bakeTableRoughness();
+    const bumpMap = bakeTableGrain();
 
     // Low tier keeps the standard material: an extra specular lobe on a
     // surface this dark is not what a weak GPU should be spending on.
     const options: THREE.MeshStandardMaterialParameters = {
       map,
       roughnessMap,
+      bumpMap,
+      bumpScale: TABLE.bumpScale,
       color: TABLE.color,
       roughness: TABLE.roughness,
       metalness: 0.04,
@@ -112,7 +135,60 @@ export class Room {
     // Nothing is under the table, and it is the largest surface in the frame.
     mesh.castShadow = false;
 
-    this.#disposables.push(geometry, material, map, roughnessMap);
+    this.#disposables.push(geometry, material, map, roughnessMap, bumpMap);
+    return mesh;
+  }
+
+  /**
+   * The occlusion skirt that grounds the board on the table.
+   *
+   * ## Why the cast shadow was not enough
+   *
+   * The key light is high and offset, so the board's shadow falls away from
+   * the camera and lands where the lamp pool has already gone dark — correct,
+   * and invisible. Worse, it is the wrong phenomenon: the board rests flush on
+   * the table, and what grounds an object in contact with a surface is not a
+   * cast shadow at all. It is ambient occlusion — the crevice between the two
+   * seeing less of the room than the open table does. Without it the board
+   * reads as pasted onto a photograph of a table.
+   *
+   * So this is a soft dark skirt following the board's footprint, dense at the
+   * edge and falling off within about half a board width. It is biased very
+   * slightly away from the lamp, which lets it stand in for the near part of
+   * the cast shadow as well.
+   *
+   * Unlit and unshadowed by design: it *is* the shadow. Lighting it would ask
+   * the renderer to shade a shadow.
+   */
+  #buildContact(): THREE.Mesh {
+    const size = BOARD_CONFIG.frame.outerSize * CONTACT.spread;
+
+    const geometry = new THREE.PlaneGeometry(size, size);
+    geometry.rotateX(-Math.PI / 2);
+
+    const texture = bakeContact();
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      // Never writes depth: it sits a hair above the table and must not
+      // occlude the board's own frame at grazing angles.
+      depthWrite: false,
+      color: 0x000000,
+      fog: false,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = 'ContactShadow';
+    // A hair above the tabletop — enough to beat z-fighting, far too little to
+    // read as a gap.
+    mesh.position.set(0, -BOARD_CONFIG.surface.thickness - 0.012, 0);
+    // Nudged away from the lamp, so the densest edge is the one a shadow
+    // would fall on.
+    mesh.position.x -= 0.05;
+    mesh.position.z -= 0.05;
+    mesh.renderOrder = 1;
+
+    this.#disposables.push(geometry, material, texture);
     return mesh;
   }
 
@@ -152,10 +228,15 @@ export class Room {
 }
 
 /**
- * Warm light pool plus directional grain.
+ * The pool of lamp light on the table.
  *
  * Multiplied against the material's base colour, so this is a light map in all
- * but name — white where the lamp lands, near-black at the corners.
+ * but name — warm where the lamp lands, black at the corners.
+ *
+ * The falloff is deliberately fast. A gentle one spread the light across the
+ * whole 60-unit plane and read as a smooth ramp rather than a lamp; darkness
+ * has to return well before the geometry ends, both because that is what a
+ * lamp in a dark room does and because it is what hides the plane's edge.
  */
 function bakeTableColor(): THREE.CanvasTexture {
   const size = TABLE.textureSize;
@@ -164,40 +245,59 @@ function bakeTableColor(): THREE.CanvasTexture {
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, size, size);
 
-  // The pool, offset towards the lamp rather than centred on the board. A
-  // perfectly centred pool reads as a spotlight in a studio; an offset one
-  // reads as a lamp in the corner of a room.
-  const cx = size * 0.44;
-  const cy = size * 0.4;
-  const pool = ctx.createRadialGradient(cx, cy, size * 0.04, cx, cy, size * 0.52);
+  // Offset towards the lamp rather than centred on the board. A perfectly
+  // centred pool reads as a studio spotlight; an offset one reads as a lamp
+  // standing somewhere in the room.
+  const cx = size * 0.45;
+  const cy = size * 0.42;
+  const pool = ctx.createRadialGradient(cx, cy, size * 0.02, cx, cy, size * 0.34);
   pool.addColorStop(0, '#fff4e2');
-  pool.addColorStop(0.35, '#b4977c');
-  pool.addColorStop(0.72, '#3a2f27');
+  pool.addColorStop(0.28, '#a78a6e');
+  pool.addColorStop(0.6, '#2b231d');
   pool.addColorStop(1, '#000000');
   ctx.fillStyle = pool;
   ctx.fillRect(0, 0, size, size);
 
-  // Grain, running in one direction and varying in weight, drawn over the
-  // pool so it is only visible where there is light to reveal it — which is
-  // exactly how grain behaves on a real table.
-  ctx.globalCompositeOperation = 'overlay';
-  for (let i = 0; i < 620; i += 1) {
-    const y = Math.random() * size;
-    const width = 0.6 + Math.random() * 2.4;
-    const alpha = 0.02 + Math.random() * 0.06;
-    ctx.strokeStyle = `rgba(255, 226, 190, ${alpha})`;
-    ctx.lineWidth = width;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    // A slight waver, so the grain is wood rather than corduroy.
-    ctx.bezierCurveTo(size * 0.3, y + wobble(), size * 0.7, y - wobble(), size, y + wobble());
-    ctx.stroke();
-  }
-  ctx.globalCompositeOperation = 'source-over';
-
   const texture = new THREE.CanvasTexture(ctx.canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
+  return texture;
+}
+
+/**
+ * Wood grain, as a tiling height field.
+ *
+ * A bump map rather than a normal map: the difference is invisible on a
+ * surface this shallow, and this one is a greyscale canvas rather than a
+ * hand-packed RGB one. What matters is that it tiles, so the grain stays the
+ * size of grain no matter how large the tabletop is.
+ */
+function bakeTableGrain(): THREE.CanvasTexture {
+  const size = 512;
+  const ctx = canvas2d(size);
+
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, size, size);
+
+  // Lines run in one direction and vary in weight and darkness — the two
+  // things that separate wood from corduroy.
+  for (let i = 0; i < 260; i += 1) {
+    const y = Math.random() * size;
+    const dark = Math.random() > 0.5;
+    const tone = dark ? 90 : 190;
+    ctx.strokeStyle = `rgba(${tone}, ${tone}, ${tone}, ${0.1 + Math.random() * 0.35})`;
+    ctx.lineWidth = 0.5 + Math.random() * 2.2;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    // A slight waver, so the grain drifts the way sawn timber does. Both
+    // endpoints stay on the same y so the tile still meets itself.
+    ctx.bezierCurveTo(size * 0.33, y + wobble(), size * 0.66, y - wobble(), size, y);
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(ctx.canvas);
+  texture.colorSpace = THREE.NoColorSpace;
+  tile(texture);
   return texture;
 }
 
@@ -231,6 +331,7 @@ function bakeTableRoughness(): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(ctx.canvas);
   texture.colorSpace = THREE.NoColorSpace;
   texture.anisotropy = 4;
+  tile(texture);
   return texture;
 }
 
@@ -266,6 +367,74 @@ function canvas2d(width: number, height = width): CanvasRenderingContext2D {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Room: 2D canvas context unavailable.');
   return ctx;
+}
+
+/**
+ * The occlusion skirt's alpha.
+ *
+ * Black everywhere; only the alpha varies. The board's footprint is a rounded
+ * square, so the dense core is drawn as one — a radial gradient would leave
+ * the corners ungrounded and darken the middle of each edge too much.
+ *
+ * Built by drawing the footprint at full opacity and then blurring it, which
+ * is what an area light does to an edge and is far more convincing than any
+ * hand-authored falloff.
+ */
+function bakeContact(): THREE.CanvasTexture {
+  const size = CONTACT.size;
+  const ctx = canvas2d(size);
+
+  // The board occupies 1 / CONTACT.spread of this texture, centred.
+  const inset = (size * (1 - 1 / CONTACT.spread)) / 2;
+  const footprint = size - inset * 2;
+  const radius = footprint * 0.06;
+
+  // Three passes, widest first. Occlusion in a crevice is not one even blur:
+  // it is a narrow, nearly black line where the two surfaces meet, and a long
+  // faint tail spreading out from it. A single wide blur gives only the tail,
+  // which is why the first attempt at this read as a vague smudge rather than
+  // as contact.
+  const passes = [
+    { blur: 0.055, alpha: CONTACT.opacity * 0.45 },
+    { blur: 0.022, alpha: CONTACT.opacity * 0.7 },
+    { blur: 0.006, alpha: CONTACT.opacity },
+  ];
+
+  for (const pass of passes) {
+    ctx.filter = `blur(${Math.max(1, Math.round(size * pass.blur))}px)`;
+    ctx.fillStyle = `rgba(0, 0, 0, ${pass.alpha})`;
+    roundedRect(ctx, inset, inset, footprint, footprint, radius);
+    ctx.fill();
+  }
+  ctx.filter = 'none';
+
+  const texture = new THREE.CanvasTexture(ctx.canvas);
+  texture.colorSpace = THREE.NoColorSpace;
+  return texture;
+}
+
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + width, y, x + width, y + height, radius);
+  ctx.arcTo(x + width, y + height, x, y + height, radius);
+  ctx.arcTo(x, y + height, x, y, radius);
+  ctx.arcTo(x, y, x + width, y, radius);
+  ctx.closePath();
+}
+
+/** Repeat a texture across the tabletop at grain scale. */
+function tile(texture: THREE.Texture): void {
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(TABLE.grainRepeat, TABLE.grainRepeat);
 }
 
 function wobble(): number {

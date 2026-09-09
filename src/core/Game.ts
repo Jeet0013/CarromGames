@@ -121,9 +121,11 @@ export class Game {
     this.#environment = new Environment();
     const hasEnvironment = quality !== QualityTier.Low;
     if (hasEnvironment) {
-      // Slightly under 1: the bake is authored bright so highlights have
-      // somewhere to roll off, and the key light is still the shaping light.
-      this.#scene.setEnvironment(this.#environment.build(this.#renderer.three), 0.85);
+      // Half strength. The bake is authored bright so highlights have somewhere
+      // to roll off, which is the right way to author it and the wrong way to
+      // apply it at full weight: the environment is the fill, and the key light
+      // is still what shapes the board.
+      this.#scene.setEnvironment(this.#environment.build(this.#renderer.three), 0.5);
     }
 
     this.#lighting = new Lighting(quality, hasEnvironment);
