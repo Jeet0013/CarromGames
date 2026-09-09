@@ -12,7 +12,7 @@
 
 import { CoinColor } from '../core/types';
 import { ScreenGate } from './ScreenGate';
-import { brandMark, injectScreenSheet, injectSheet } from './theme';
+import { GOLD, brandMark, injectScreenSheet, injectSheet } from './theme';
 
 /** One player's final line on the scoreboard. */
 export interface ScoreRow {
@@ -264,7 +264,7 @@ const VICTORY_CSS = `
 }
 
 .cx-victory-headline.is-win {
-  background: linear-gradient(179deg, #fffdf2 2%, #ffe9a4 19%, #f3c64f 41%, #bd8722 53%, #f4d275 69%, #fff7db 94%);
+  background: ${GOLD};
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
