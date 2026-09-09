@@ -8,6 +8,8 @@
 
 import type { AudioManager } from '../audio/AudioManager';
 
+import { injectBaseSheet } from './theme';
+
 export class SoundToggle {
   readonly #button: HTMLButtonElement;
   readonly #audio: AudioManager;
@@ -17,23 +19,15 @@ export class SoundToggle {
 
     this.#button = document.createElement('button');
     this.#button.type = 'button';
+    injectBaseSheet();
+    this.#button.className = 'cx-icon-btn cx-focus';
     this.#button.style.cssText = [
       'position:absolute',
       'top:max(14px, env(safe-area-inset-top))',
       'right:max(14px, env(safe-area-inset-right))',
-      'width:46px',
-      'height:46px',
-      'border-radius:50%',
-      'border:1px solid rgba(176,122,69,0.45)',
-      'background:rgba(18,16,14,0.8)',
-      'color:#f4ece1',
       'font-size:19px',
       'line-height:1',
-      'cursor:pointer',
-      'display:grid',
-      'place-items:center',
       'z-index:40',
-      '-webkit-tap-highlight-color:transparent',
     ].join(';');
 
     this.#render();

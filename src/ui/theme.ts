@@ -21,6 +21,8 @@
  * it is the one place more than one hue earns its keep.
  */
 
+import logoArt from '../assets/logo.png';
+
 /** Heavy display face for names and numerals. Present on every platform. */
 export const DISPLAY_FONT = '"Arial Black", "Arial Bold", Gadget, system-ui, sans-serif';
 /** Everything you actually read. */
@@ -164,6 +166,354 @@ export function injectBaseSheet(): void {
 @media (prefers-reduced-motion: reduce) {
   .cx-anim, .cx-anim * { animation: none !important; transition: none !important; }
 }
+`,
+  );
+}
+
+/**
+ * The game's mark, as an element.
+ *
+ * Every full-screen overlay is branded from here rather than typesetting the
+ * name again — the menu and the difficulty screen were each drawing their own
+ * heading in their own gradient, which is how two screens of one flow end up
+ * looking like two products.
+ */
+/** One star, drawn, so its shape is ours rather than the font's. */
+export function starMark(filled: boolean): HTMLElement {
+  const star = document.createElement('span');
+  star.className = filled ? 'cx-star cx-star--on' : 'cx-star cx-star--off';
+  star.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true">'
+    + '<path d="M12 2.6l2.9 5.9 6.5.95-4.7 4.58 1.11 6.47L12 17.44 6.19 20.5l1.11-6.47L2.6 9.45l6.5-.95z"'
+    + ` fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.4"`
+    + ' stroke-linejoin="round"/></svg>';
+  return star;
+}
+
+export function brandMark(size: 'lg' | 'sm' = 'sm'): HTMLElement {
+  const logo = document.createElement('img');
+  logo.src = logoArt;
+  logo.alt = 'Carrom Arena';
+  logo.width = 560;
+  logo.height = 280;
+  logo.className = `cx-brand cx-brand--${size}`;
+  return logo;
+}
+
+/**
+ * Furniture every full-screen overlay shares: the ground, the plate it sits
+ * on, the eyebrow, the rows and the back button.
+ *
+ * Split from `injectBaseSheet` because the HUD wants the plate and the focus
+ * ring without any of this.
+ */
+export function injectScreenSheet(): void {
+  injectBaseSheet();
+  injectSheet(
+    'screen',
+    `
+.cx-screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  /* Never center: a tall panel on a short screen must scroll from the top
+     rather than have its head cut off. */
+  justify-content: flex-start;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  background: radial-gradient(ellipse at 50% 42%, rgba(26, 20, 15, 0.8), rgba(9, 8, 7, 0.95) 74%);
+  backdrop-filter: blur(3px);
+  z-index: ${LAYER.screen};
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cx-screen-panel {
+  width: min(470px, 100%);
+  margin: auto 0;
+  padding: clamp(20px, 4vh, 30px) 0 clamp(12px, 2vh, 18px);
+}
+
+.cx-screen-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 2vh, 16px);
+  padding: 0 clamp(20px, 5vw, 30px);
+}
+
+.cx-brand {
+  display: block;
+  height: auto;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.6));
+}
+
+.cx-brand--lg { width: clamp(190px, 46vw, 270px); }
+.cx-brand--sm { width: clamp(140px, 34vw, 190px); }
+
+/*
+ * The one place small caps are used, and only once per screen.
+ *
+ * An eyebrow over every item is a label nobody reads; an eyebrow naming the
+ * screen is a heading.
+ */
+.cx-eyebrow {
+  margin: 0;
+  font: 600 11px / 1 ${MONO_FONT};
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: ${COLORS.inkMuted};
+  /* Letter-spacing pads the right edge; pull it back so it reads centred. */
+  margin-right: -0.26em;
+}
+
+.cx-list {
+  list-style: none;
+  margin: clamp(6px, 1.4vh, 12px) 0 0;
+  padding: 0;
+}
+
+.cx-list li + li .cx-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: clamp(20px, 5vw, 30px);
+  right: clamp(20px, 5vw, 30px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, ${COLORS.brassFaint} 18%, ${COLORS.brassFaint} 82%, transparent);
+}
+
+.cx-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 3vw, 18px);
+  width: 100%;
+  min-height: 62px;
+  padding: 13px clamp(20px, 5vw, 30px);
+  border: 0;
+  background: transparent;
+  color: ${COLORS.ink};
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 180ms ease, transform 120ms ease;
+}
+
+.cx-row:disabled { cursor: not-allowed; opacity: 0.4; }
+
+@media (any-hover: hover) {
+  .cx-row:not(:disabled):hover { background-color: rgba(201, 152, 47, 0.07); }
+  .cx-row:not(:disabled):hover .cx-row-name { color: #ffeec2; }
+  .cx-row:not(:disabled):hover .cx-mark { color: ${COLORS.brass}; transform: scale(1.06); }
+}
+
+.cx-row:not(:disabled):active {
+  transform: translateY(1px);
+  background-color: rgba(201, 152, 47, 0.11);
+}
+
+.cx-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: ${COLORS.inkSoft};
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.cx-mark svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cx-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+.cx-row-name {
+  font: 600 clamp(15px, 3.8vw, 17px) / 1.2 ${TEXT_FONT};
+  transition: color 180ms ease;
+}
+
+.cx-row-blurb {
+  font: 400 clamp(12px, 3.2vw, 13px) / 1.4 ${TEXT_FONT};
+  color: ${COLORS.inkMuted};
+  text-wrap: pretty;
+}
+
+.cx-row-meta {
+  flex: none;
+  margin-left: auto;
+  font: 500 11px / 1 ${MONO_FONT};
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+  color: ${COLORS.inkMuted};
+  white-space: nowrap;
+}
+
+/*
+ * Strength, as stars.
+ *
+ * Drawn as SVG rather than typed as the ★ character: a glyph's shape, weight
+ * and vertical alignment are whichever font ends up rendering it, which
+ * differs across the platforms this ships to. This one is the same star
+ * everywhere, and it is filled in the one accent rather than in a colour per
+ * difficulty.
+ */
+.cx-stars {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+  flex: none;
+}
+
+.cx-star {
+  width: 15px;
+  height: 15px;
+  color: ${COLORS.brass};
+}
+
+.cx-star--off { color: rgba(201, 152, 47, 0.3); }
+
+.cx-star svg { width: 100%; height: 100%; display: block; }
+
+.cx-star--on svg { filter: drop-shadow(0 0 4px rgba(201, 152, 47, 0.45)); }
+
+/*
+ * The button system. Four kinds, and no fifth.
+ *
+ * - primary: the one thing this screen wants you to do. Struck in the metal.
+ * - quiet:   the alternative. Same size and shape, no fill.
+ * - danger:  leaving a match. The board's lacquer, used as a warning.
+ * - icon:    a round control in a corner.
+ *
+ * They live here rather than on the screen that first needed them. "Got it"
+ * on the tutorial was styled by a class defined in the victory screen's
+ * stylesheet, which meant it was only styled at all if a match had already
+ * ended — a bug that would have shipped looking like a CSS load-order fluke.
+ */
+.cx-btn {
+  min-height: 48px;
+  padding: 0 26px;
+  border-radius: 999px;
+  font: 700 13px / 1 ${TEXT_FONT};
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 120ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.cx-btn--primary {
+  border: 1px solid #f3dc9a;
+  background: ${GOLD};
+  color: #3a2408;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.cx-btn--quiet {
+  border: 1px solid ${COLORS.brassDim};
+  background: transparent;
+  color: ${COLORS.inkSoft};
+}
+
+/*
+ * The one destructive action in the game: leaving a match in progress.
+ *
+ * Struck in the board's own lacquer rather than in the metal — the same
+ * material vocabulary, used as a warning instead of an invitation.
+ */
+.cx-btn--danger {
+  border: 1px solid rgba(198, 72, 60, 0.6);
+  background: linear-gradient(170deg, #a8302a, #6b191b);
+  color: #fdece8;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 200, 190, 0.18);
+}
+
+/*
+ * Round controls: exit, help, sound, powder.
+ *
+ * These were already consistent with each other — four hand-rolled circles at
+ * the same size with the same border, repeated four times. What none of them
+ * had was a hover state, any press feedback, or a focus ring, and their
+ * colours were literals sitting outside the palette. Saying it once fixes all
+ * four and means the fifth cannot drift.
+ */
+.cx-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid ${COLORS.brassDim};
+  background: linear-gradient(168deg, rgba(31, 25, 20, 0.9), rgba(17, 14, 11, 0.92));
+  color: ${COLORS.inkSoft};
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: transform 120ms ease, color 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.cx-icon-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (any-hover: hover) {
+  .cx-btn--primary:hover {
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55), 0 0 22px rgba(255, 214, 120, 0.3);
+  }
+  .cx-btn--quiet:hover { background-color: rgba(201, 152, 47, 0.1); color: ${COLORS.ink}; }
+  .cx-btn--danger:hover {
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55), 0 0 20px rgba(198, 72, 60, 0.35);
+  }
+  .cx-icon-btn:hover {
+    color: ${COLORS.brass};
+    border-color: ${COLORS.brass};
+    background-color: rgba(201, 152, 47, 0.12);
+  }
+}
+
+/* One press feel for every button in the game. */
+.cx-btn:active, .cx-icon-btn:active { transform: translateY(1px) scale(0.98); }
+
+.cx-btn:disabled, .cx-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.cx-btn:disabled:active, .cx-icon-btn:disabled:active { transform: none; }
+
+/* Quiet by default: leaving is never the thing you want emphasised. */
+.cx-back {
+  display: block;
+  margin: clamp(10px, 2vh, 16px) auto 0;
+  min-height: 44px;
+  padding: 0 22px;
+  border: 0;
+  background: transparent;
+  color: ${COLORS.inkMuted};
+  font: 500 13px / 1 ${TEXT_FONT};
+  cursor: pointer;
+  border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+@media (any-hover: hover) {
+  .cx-back:hover { color: ${COLORS.ink}; background-color: rgba(201, 152, 47, 0.08); }
+}
+
+.cx-back:active { color: ${COLORS.ink}; background-color: rgba(201, 152, 47, 0.14); }
 `,
   );
 }

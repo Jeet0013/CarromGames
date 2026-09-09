@@ -9,6 +9,8 @@
  * is deliberately large, so an accidental brush must not throw that away.
  */
 
+import { injectBaseSheet } from './theme';
+
 export class ExitButton {
   readonly #button: HTMLButtonElement;
   readonly #confirm: HTMLElement;
@@ -23,21 +25,13 @@ export class ExitButton {
       <path d="M17 15l3-3-3-3" fill="none" stroke="#f4ece1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       <path d="M20 12h-9" fill="none" stroke="#f4ece1" stroke-width="1.8" stroke-linecap="round"/>
     </svg>`;
+    injectBaseSheet();
+    this.#button.className = 'cx-icon-btn cx-focus';
     this.#button.style.cssText = [
       'position:absolute',
       'top:max(14px, env(safe-area-inset-top))',
       'left:max(14px, env(safe-area-inset-left))',
-      'width:46px',
-      'height:46px',
-      'border-radius:50%',
-      'border:1px solid rgba(176,122,69,0.45)',
-      'background:rgba(18,16,14,0.8)',
-      'cursor:pointer',
-      'display:grid',
-      'place-items:center',
-      'padding:0',
       'z-index:41',
-      '-webkit-tap-highlight-color:transparent',
     ].join(';');
 
     // ── Confirmation ──────────────────────────────────────────────────────
@@ -102,20 +96,17 @@ export class ExitButton {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = label;
-    button.style.cssText = [
-      'padding:16px 26px',
-      'border-radius:999px',
-      primary
-        ? 'border:1px solid rgba(198,72,60,0.6)'
-        : 'border:1px solid rgba(176,122,69,0.35)',
-      primary ? 'background:linear-gradient(170deg, #c0392b, #8e2b20)' : 'background:transparent',
-      primary ? 'color:#fdece8' : 'color:#c9bdae',
-      'font:700 13.5px/1 system-ui, -apple-system, sans-serif',
-      'letter-spacing:0.08em',
-      'text-transform:uppercase',
-      'cursor:pointer',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
+    /*
+     * The same two buttons as everywhere else, with one exception.
+     *
+     * Leaving a match is the one destructive action in the game, so the
+     * primary here is struck in lacquer rather than in the metal — a warning
+     * colour rather than an inviting one. Everything else about it, size,
+     * shape, press feel, is the shared button.
+     */
+    button.className = primary
+      ? 'cx-btn cx-btn--danger cx-focus'
+      : 'cx-btn cx-btn--quiet cx-focus';
     return button;
   }
 

@@ -27,10 +27,9 @@
  * silently misbehaves is worse than one that says it is not ready.
  */
 
-import logoArt from '../assets/logo.png';
 import { GameMode } from '../core/types';
 import { ScreenGate } from './ScreenGate';
-import { COLORS, LAYER, MONO_FONT, TEXT_FONT, injectBaseSheet, injectSheet } from './theme';
+import { brandMark, injectScreenSheet, injectSheet } from './theme';
 
 export interface MenuOption {
   readonly mode: GameMode;
@@ -109,14 +108,14 @@ export class MainMenu {
   constructor(container: HTMLElement, onSelect: (mode: GameMode) => void) {
     this.#onSelect = onSelect;
 
-    injectBaseSheet();
+    injectScreenSheet();
     injectSheet('menu', MENU_CSS);
 
     this.#root = document.createElement('div');
-    this.#root.className = 'cx-menu';
+    this.#root.className = 'cx-screen';
 
     const content = document.createElement('div');
-    content.className = 'cx-menu-content cx-plate';
+    content.className = 'cx-screen-panel cx-plate';
     content.append(this.#buildHeader(), this.#buildList());
 
     this.#root.append(content);
@@ -125,7 +124,7 @@ export class MainMenu {
 
   #buildHeader(): HTMLElement {
     const header = document.createElement('header');
-    header.className = 'cx-menu-header';
+    header.className = 'cx-screen-head';
 
     /*
      * The supplied logo, not a typeset name.
@@ -137,17 +136,9 @@ export class MainMenu {
      */
     const title = document.createElement('h1');
     title.className = 'cx-menu-title';
+    title.append(brandMark('lg'));
 
-    const logo = document.createElement('img');
-    logo.src = logoArt;
-    logo.alt = 'Carrom Arena';
-    logo.width = 560;
-    logo.height = 280;
-    logo.className = 'cx-menu-logo';
-
-    title.append(logo);
-
-    // A struck rule under the name instead of a second all-caps line. The old
+    // A struck rule under the mark instead of a second all-caps line. The old
     // "CHOOSE A GAME" said nothing the five rows below it did not already say.
     const rule = document.createElement('hr');
     rule.className = 'cx-rule cx-menu-headrule';
@@ -159,7 +150,7 @@ export class MainMenu {
   #buildList(): HTMLElement {
     // A menu is a list. Saying so gives a screen reader the count for free.
     const list = document.createElement('ul');
-    list.className = 'cx-menu-list';
+    list.className = 'cx-list';
 
     for (const option of MENU_OPTIONS) {
       const item = document.createElement('li');
@@ -175,23 +166,23 @@ export class MainMenu {
 
     const row = document.createElement('button');
     row.type = 'button';
-    row.className = 'cx-menu-row cx-focus';
+    row.className = 'cx-row cx-focus';
     row.disabled = locked;
 
     const mark = document.createElement('span');
-    mark.className = 'cx-menu-mark';
+    mark.className = 'cx-mark';
     mark.setAttribute('aria-hidden', 'true');
     mark.innerHTML = `<svg viewBox="0 0 24 24">${MARKS[option.icon]}</svg>`;
 
     const text = document.createElement('span');
-    text.className = 'cx-menu-text';
+    text.className = 'cx-row-text';
 
     const title = document.createElement('span');
-    title.className = 'cx-menu-name';
+    title.className = 'cx-row-name';
     title.textContent = option.title;
 
     const blurb = document.createElement('span');
-    blurb.className = 'cx-menu-blurb';
+    blurb.className = 'cx-row-blurb';
     blurb.textContent = locked ? `${option.blurb} ${option.lockedReason}` : option.blurb;
 
     text.append(title, blurb);
@@ -199,7 +190,7 @@ export class MainMenu {
     // Right-aligned and tabular, so the counts form a column the eye can run
     // down rather than five labels of five different widths.
     const tag = document.createElement('span');
-    tag.className = 'cx-menu-tag';
+    tag.className = 'cx-row-meta';
     tag.textContent = option.tag;
 
     row.append(mark, text, tag);
@@ -246,176 +237,11 @@ export class MainMenu {
 }
 
 const MENU_CSS = `
-.cx-menu {
-  position: absolute;
-  inset: 0;
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  /* Never center: a tall list on a short screen must scroll from the top
-     rather than have its head cut off. */
-  justify-content: flex-start;
-  padding: max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
-  /* The board is behind this; a warm wash keeps it faintly visible so the menu
-     reads as sitting on the table rather than replacing it. */
-  background: radial-gradient(ellipse at 50% 42%, rgba(26, 20, 15, 0.8), rgba(9, 8, 7, 0.95) 74%);
-  backdrop-filter: blur(3px);
-  z-index: ${LAYER.screen};
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.cx-menu-content {
-  width: min(470px, 100%);
-  /* Centres when it fits, scrolls from the top when it does not. */
-  margin: auto 0;
-  padding: clamp(20px, 4vh, 32px) 0 clamp(10px, 2vh, 16px);
-}
-
-.cx-menu-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: clamp(12px, 2.4vh, 20px);
-  padding: 0 clamp(20px, 5vw, 30px);
-}
-
-.cx-menu-title {
-  margin: 0;
-  line-height: 0;
-}
-
-.cx-menu-logo {
-  display: block;
-  /* Big enough to read as the game's mark, small enough that the five modes
-     below it are still the reason the screen exists. */
-  width: clamp(190px, 46vw, 270px);
-  height: auto;
-  /* The mark is drawn lit from above; this is its shadow on the plate. */
-  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.6));
-}
-
+.cx-menu-title { margin: 0; line-height: 0; }
 .cx-menu-headrule { width: 100%; }
-
-.cx-menu-list {
-  list-style: none;
-  margin: clamp(6px, 1.4vh, 12px) 0 0;
-  padding: 0;
-}
-
-/* The rules between rows — struck, not bordered, and not above the first. */
-.cx-menu-list li + li .cx-menu-row::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: clamp(20px, 5vw, 30px);
-  right: clamp(20px, 5vw, 30px);
-  height: 1px;
-  background: linear-gradient(90deg, transparent, ${COLORS.brassFaint} 18%, ${COLORS.brassFaint} 82%, transparent);
-}
-
-.cx-menu-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: clamp(12px, 3vw, 18px);
-  width: 100%;
-  /* Comfortably past 44px at every step. */
-  min-height: 62px;
-  padding: 13px clamp(20px, 5vw, 30px);
-  border: 0;
-  background: transparent;
-  color: ${COLORS.ink};
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 180ms ease, transform 120ms ease;
-}
-
-.cx-menu-row:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-/*
- * Hover on devices that have one.
- *
- * 'any-hover' rather than a JS pointerenter listener: on a touchscreen that
- * listener fires on tap and leaves the row stuck in its hover state until
- * something else is touched.
- */
-@media (any-hover: hover) {
-  .cx-menu-row:not(:disabled):hover {
-    background-color: rgba(201, 152, 47, 0.07);
-  }
-  .cx-menu-row:not(:disabled):hover .cx-menu-mark {
-    color: ${COLORS.brass};
-    transform: scale(1.06);
-  }
-  .cx-menu-row:not(:disabled):hover .cx-menu-name {
-    color: #ffeec2;
-  }
-}
-
-/* Press feedback, which there was none of. A row you push should move. */
-.cx-menu-row:not(:disabled):active {
-  transform: translateY(1px);
-  background-color: rgba(201, 152, 47, 0.11);
-}
-
-.cx-menu-mark {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  color: ${COLORS.inkSoft};
-  transition: color 180ms ease, transform 180ms ease;
-}
-
-.cx-menu-mark svg {
-  width: 22px;
-  height: 22px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.cx-menu-text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.cx-menu-name {
-  font: 600 clamp(15px, 3.8vw, 17px) / 1.2 ${TEXT_FONT};
-  letter-spacing: 0;
-  transition: color 180ms ease;
-}
-
-.cx-menu-blurb {
-  font: 400 clamp(12px, 3.2vw, 13px) / 1.4 ${TEXT_FONT};
-  color: ${COLORS.inkMuted};
-  text-wrap: pretty;
-}
-
-.cx-menu-tag {
-  flex: none;
-  margin-left: auto;
-  font: 500 11px / 1 ${MONO_FONT};
-  /* Tabular so "1 player" and "4 players" align on the digit. */
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.1em;
-  color: ${COLORS.inkMuted};
-  white-space: nowrap;
-}
 
 /* Under about 380px the count and the blurb start fighting; the blurb wins. */
 @media (max-width: 380px) {
-  .cx-menu-tag { display: none; }
+  .cx-row-meta { display: none; }
 }
 `;

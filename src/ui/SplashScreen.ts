@@ -32,6 +32,7 @@
  */
 
 import welcomeArt from '../assets/welcome.jpg';
+import welcomeWideArt from '../assets/welcome-wide.jpg';
 import { GAME_CONFIG } from '../config/GameConfig';
 import { LAYER, MONO_FONT, injectSheet } from './theme';
 
@@ -43,17 +44,34 @@ import { LAYER, MONO_FONT, injectSheet } from './theme';
  */
 const SHIELD_MS = 450;
 
-/** The artwork's own proportions, so the stage can match them exactly. */
-const ART = { width: 1024, height: 1536 } as const;
+/**
+ * Two paintings of the same room, one per shape of screen.
+ *
+ * The portrait art is the phone's, and it was the desktop's too until now — a
+ * 2:3 picture centred in a 16:9 window, with a blurred copy filling the sides.
+ * Honest, but the art only occupied the middle third of a desktop display. The
+ * wide plate is drawn for that shape, so the room fills the window.
+ *
+ * The choice is a media query, not a measurement: both are inlined into the
+ * bundle either way, so there is nothing to defer and nothing to decide at
+ * runtime.
+ */
+const ART = {
+  tall: { width: 1024, height: 1536 },
+  wide: { width: 1672, height: 941 },
+} as const;
 
 /**
- * Where the painted button sits, as fractions of the artwork.
+ * Where each painted button sits, as fractions of its own artwork.
  *
- * Measured off the supplied file. Because the stage below is given the art's
- * exact aspect ratio, these percentages land on the same pixels at every size
- * — no JavaScript measuring, and nothing to re-run on resize.
+ * Measured off the supplied files. Because each stage is given its art's exact
+ * aspect ratio, these percentages land on the same pixels at every size — no
+ * JavaScript measuring, and nothing to re-run on resize.
  */
-const BUTTON = { top: 80.4, height: 6.2, width: 52, left: 50 } as const;
+const BUTTON = {
+  tall: { top: 80.4, height: 6.2, width: 52, left: 50 },
+  wide: { top: 77.2, height: 8.2, width: 24.6, left: 50.2 },
+} as const;
 
 export class SplashScreen {
   readonly #root: HTMLElement;
@@ -77,10 +95,10 @@ export class SplashScreen {
     stage.className = 'cx-splash-stage';
 
     const art = document.createElement('img');
-    art.className = 'cx-splash-art';
+    art.className = 'cx-splash-art cx-splash-art--tall';
     art.src = welcomeArt;
-    art.width = ART.width;
-    art.height = ART.height;
+    art.width = ART.tall.width;
+    art.height = ART.tall.height;
     // The art carries the game's name and its instruction as pixels. Without
     // this a screen reader finds a picture and nothing else.
     art.alt = 'Carrom Arena — a gold crowned logo on a carrom board. Tap to start.';
@@ -102,7 +120,19 @@ export class SplashScreen {
     // The label is painted into the art; this names it for anyone not seeing it.
     button.setAttribute('aria-label', 'Tap to start');
 
-    stage.append(art, button);
+    // The wide plate. Only one of the two is ever displayed; the other is
+    // `display: none` and costs a decode it never performs.
+    const wide = document.createElement('img');
+    wide.className = 'cx-splash-art cx-splash-art--wide';
+    wide.src = welcomeWideArt;
+    wide.width = ART.wide.width;
+    wide.height = ART.wide.height;
+    // The tall one already carries the description; two would be read twice.
+    wide.alt = '';
+    wide.setAttribute('aria-hidden', 'true');
+    wide.decoding = 'sync';
+
+    stage.append(art, wide, button);
 
     /*
      * Which build this is.
@@ -257,17 +287,19 @@ const SPLASH_CSS = `
   transform: scale(1.1);
 }
 
+.cx-splash-art--wide { display: none; }
+
 .cx-splash-stage {
   position: absolute;
   inset: 0;
   margin: auto;
   /* The art's own proportions. Percentages inside this box therefore land on
      the art's own pixels, at any size, with nothing to measure. */
-  aspect-ratio: ${ART.width} / ${ART.height};
+  aspect-ratio: ${ART.tall.width} / ${ART.tall.height};
   max-width: 100%;
   max-height: 100%;
   /* Only as large as it really is — upscaling a JPEG past 1:1 just softens it. */
-  width: min(100%, calc(100vh * ${ART.width} / ${ART.height}));
+  width: min(100%, calc(100vh * ${ART.tall.width} / ${ART.tall.height}));
 }
 
 .cx-splash-art {
@@ -290,10 +322,10 @@ const SPLASH_CSS = `
  */
 .cx-splash-button {
   position: absolute;
-  top: ${BUTTON.top}%;
-  left: ${BUTTON.left}%;
-  width: ${BUTTON.width}%;
-  height: ${BUTTON.height}%;
+  top: ${BUTTON.tall.top}%;
+  left: ${BUTTON.tall.left}%;
+  width: ${BUTTON.tall.width}%;
+  height: ${BUTTON.tall.height}%;
   transform: translate(-50%, -50%);
   /* Never below the 44px minimum, however small the art is drawn. */
   min-height: 44px;
@@ -319,6 +351,35 @@ const SPLASH_CSS = `
   transform: translate(-50%, -50%) scale(0.975);
   background-color: rgba(120, 74, 12, 0.22);
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/*
+ * Landscape: swap in the plate drawn for it.
+ *
+ * Keyed on the window being wider than it is tall rather than on a pixel
+ * width, because what makes the portrait art wrong is the shape of the
+ * opening, not the size of it — a phone held sideways wants the wide plate as
+ * much as a monitor does.
+ */
+@media (min-aspect-ratio: 1 / 1) {
+  .cx-splash-stage {
+    aspect-ratio: ${ART.wide.width} / ${ART.wide.height};
+    width: min(100%, calc(100vh * ${ART.wide.width} / ${ART.wide.height}));
+  }
+
+  .cx-splash-art--tall { display: none; }
+  .cx-splash-art--wide { display: block; }
+
+  .cx-splash-ground {
+    background-image: url(${JSON.stringify(welcomeWideArt)});
+  }
+
+  .cx-splash-button {
+    top: ${BUTTON.wide.top}%;
+    left: ${BUTTON.wide.left}%;
+    width: ${BUTTON.wide.width}%;
+    height: ${BUTTON.wide.height}%;
+  }
 }
 
 .cx-splash-build {
