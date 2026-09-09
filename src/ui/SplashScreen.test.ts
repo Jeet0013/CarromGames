@@ -42,9 +42,17 @@ describe('SplashScreen', () => {
     new SplashScreen(container, vi.fn()).show();
     tap(root());
 
-    // Transparent, but still displayed — that is what absorbs the click.
-    expect(root().style.opacity).toBe('0');
-    expect(root().style.display).toBe('flex');
+    /*
+     * Visually gone, but still displayed and still the hit-test answer — that
+     * is what absorbs the click of this same tap.
+     *
+     * Asserted as "not none" plus the leaving marker rather than as a specific
+     * display value or an inline opacity: those are how it happens to be done,
+     * and pinning them meant this test failed when the fade moved into a
+     * stylesheet, while the fault it exists to catch was nowhere near.
+     */
+    expect(root().classList.contains('is-leaving')).toBe(true);
+    expect(root().style.display).not.toBe('none');
   });
 
   it('swallows the click the same tap produces', () => {
@@ -67,11 +75,38 @@ describe('SplashScreen', () => {
     vi.useFakeTimers();
     new SplashScreen(container, vi.fn()).show();
     tap(root());
-    expect(root().style.display).toBe('flex');
+    expect(root().style.display).not.toBe('none');
 
     await vi.advanceTimersByTimeAsync(600);
     expect(root().style.display).toBe('none');
     vi.useRealTimers();
+  });
+
+  /*
+   * A device-only bug, caught on a phone and invisible on a desktop.
+   *
+   * The two plates are told apart by `.cx-splash-art--wide { display: none }`,
+   * which sat *before* `.cx-splash-art { display: block }`. Same specificity,
+   * so the later rule won and both plates rendered — the phone drew the tall
+   * art and then the wide art stacked under it. A desktop looked right only
+   * because the landscape media query came last and hid the other one.
+   *
+   * Asserted on the stylesheet the screen actually injects, so it holds
+   * whatever the rules are edited into later.
+   */
+  it('hides the plate it is not showing, whatever the rule order becomes', () => {
+    new SplashScreen(container, vi.fn()).show();
+
+    const sheet = [...document.head.querySelectorAll('style')]
+      .map((style) => style.textContent ?? '')
+      .find((css) => css.includes('.cx-splash-art'));
+    expect(sheet).toBeDefined();
+
+    const base = sheet!.indexOf('.cx-splash-art {');
+    const hidden = sheet!.indexOf('.cx-splash-art--wide { display: none; }');
+    expect(base).toBeGreaterThan(-1);
+    expect(hidden).toBeGreaterThan(-1);
+    expect(hidden).toBeGreaterThan(base);
   });
 
   it('starts the game once however many events the tap produces', () => {

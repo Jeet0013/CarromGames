@@ -17,6 +17,9 @@
  * into the rules.
  */
 
+import applauseUrl from '../assets/applause.mp3';
+import booUrl from '../assets/boo.mp3';
+import { FoulKind, PieceKind } from '../core/types';
 import type { EventBus } from '../core/EventBus';
 import { PHYSICS_CONFIG } from '../physics/PhysicsConfig';
 
@@ -111,7 +114,73 @@ export class AudioManager {
       else this.playCoinHit(impact, a === 'striker' || b === 'striker');
     });
 
-    events.on('pocket:scored', () => this.playPocket());
+    /*
+     * A pocket is two sounds, not one.
+     *
+     * `playPocket` is the physical event — the coin dropping through. The
+     * crowd is the *judgement* of it, and the two are separate because they
+     * are not always both true: the striker going down is a pocket and a
+     * foul, and cheering it would be the game congratulating you for losing a
+     * turn.
+     *
+     * `playCheer` already existed, written for exactly this and never wired to
+     * anything.
+     */
+    /*
+     * A pocket is two sounds, and they happen at different times.
+     *
+     * `playPocket` is the physical event — a coin dropping through — and it
+     * plays the instant it happens, because that is when it happens.
+     *
+     * The crowd is the *judgement*, and a judgement cannot be made yet. When
+     * `pocket:scored` fires, nobody knows whether that coin was yours. Pocket
+     * an opponent's coin and this event is identical to pocketing your own,
+     * yet one is a point and the other is a foul — so cheering here applauded
+     * a foul and then booed it half a second later.
+     *
+     * `TurnManager` emits every foul before `shot:resolved`, so by the time
+     * the shot resolves the verdict is in. That is where the crowd reacts.
+     */
+    events.on('shot:fired', () => {
+      this.#pottedThisShot = false;
+      this.#fouledThisShot = false;
+    });
+
+    events.on('pocket:scored', ({ kind }) => {
+      this.playPocket();
+      // The striker going down is never worth cheering; anything else is,
+      // unless a foul follows it.
+      if (kind !== PieceKind.Striker) this.#pottedThisShot = true;
+    });
+
+    /*
+     * The crowd boos a mistake, not a miss.
+     *
+     * Every foul still counts against the shot, so none of them lead to
+     * applause. But NoContact — the striker crossing the board without
+     * touching anything — is the one a player already knows about and already
+     * feels. Jeering it is the game piling on, and since a beginner misses
+     * constantly, it is also the sound they would hear most.
+     *
+     * The rule is untouched: a miss is still a foul and still carries its
+     * penalty. This is only about whether a room full of people reacts to it.
+     */
+    events.on('rules:foul', ({ kind }) => {
+      this.#fouledThisShot = true;
+      if (kind !== FoulKind.NoContact) this.playBoo();
+    });
+
+    events.on('shot:resolved', () => {
+      if (this.#pottedThisShot && !this.#fouledThisShot) this.playCheer();
+    });
+
+    /*
+     * The winning shot never reaches `shot:resolved`.
+     *
+     * `TurnManager` returns early once it has a winner, so without this the
+     * biggest moment in a match would be the one that got no applause.
+     */
+    events.on('rules:gameComplete', () => this.playCheer());
 
     /*
      * Browsers refuse to start audio without a user gesture.
@@ -288,6 +357,68 @@ export class AudioManager {
   }
 
   /** Record when a voice is scheduled to stop. */
+  /**
+   * Decoded sample cache.
+   *
+   * Both clips arrive as data URIs — the build inlines every asset so the
+   * single-file artifact stays self-contained — and are decoded once on first
+   * use. Decoding is async and cannot happen before the context exists, so the
+   * first play of each may be silent; every one after is immediate.
+   */
+  /** Whether this shot potted anything, and whether it fouled. */
+  #pottedThisShot = false;
+  #fouledThisShot = false;
+
+  readonly #samples = new Map<string, AudioBuffer>();
+  readonly #decoding = new Set<string>();
+
+  #sample(context: AudioContext, url: string): AudioBuffer | undefined {
+    const cached = this.#samples.get(url);
+    if (cached) return cached;
+
+    if (!this.#decoding.has(url)) {
+      this.#decoding.add(url);
+      void fetch(url)
+        .then((response) => response.arrayBuffer())
+        .then((data) => context.decodeAudioData(data))
+        .then((buffer) => {
+          this.#samples.set(url, buffer);
+        })
+        .catch(() => {
+          // A clip that will not decode is not worth taking the game down for;
+          // the rest of the sound design carries on without it.
+        })
+        .finally(() => this.#decoding.delete(url));
+    }
+    return undefined;
+  }
+
+  /**
+   * Play a decoded clip, or nothing at all if it is not ready yet.
+   *
+   * @param level peak gain; these are recorded samples, so this is the only
+   *   shaping they need beyond the fade already baked into the file.
+   */
+  #playSample(url: string, level: number): boolean {
+    const context = this.#context;
+    if (!context || !this.#master) return false;
+
+    const buffer = this.#sample(context, url);
+    if (!buffer) return false;
+
+    const now = context.currentTime;
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+
+    const gain = context.createGain();
+    gain.gain.value = level;
+
+    source.connect(gain).connect(this.#master);
+    source.start(now);
+    this.#trackVoice(now + buffer.duration);
+    return true;
+  }
+
   #trackVoice(endsAt: number): void {
     this.#voiceEnds.push(endsAt);
   }
@@ -677,6 +808,13 @@ export class AudioManager {
    * one shot and each deserves to be heard, since it is the moment the player
    * is actually waiting for.
    */
+  /**
+   * A coin dropping through a pocket. The sound of the event, nothing more.
+   *
+   * The crowd's reaction used to live in here, which put the question of
+   * *whether* to celebrate inside the sound of the coin. That is a rules
+   * question, and it is now answered where the rules are known.
+   */
   playPocket(): void {
     if (!this.#settings.sfxEnabled) return;
     const context = this.#context;
@@ -716,7 +854,6 @@ export class AudioManager {
     thud.stop(now + 0.42);
     this.#trackVoice(now + 0.42);
 
-    this.playCheer();
   }
 
   /**
@@ -729,7 +866,11 @@ export class AudioManager {
    */
   #buildCrowd(context: AudioContext): AudioBuffer {
     const rate = context.sampleRate;
-    const length = Math.floor(rate * 1.6);
+    // 2.8s, up from 1.6. The cheer now runs a full two seconds and the boo
+    // plays this back slowed, which consumes it faster than real time — a
+    // shorter buffer ran out mid-envelope and the crowd cut off rather than
+    // faded.
+    const length = Math.floor(rate * 2.8);
     const buffer = context.createBuffer(2, length, rate);
 
     for (let channel = 0; channel < 2; channel += 1) {
@@ -761,13 +902,24 @@ export class AudioManager {
     const context = this.#context;
     if (!context || !this.#master) return;
 
+    /*
+     * The recorded applause, when it has decoded.
+     *
+     * The synthesised crowd below is not dead code — it is what plays on the
+     * very first pocket of a session, before the clip has finished decoding,
+     * and it is what plays if the file ever fails to decode at all. A game
+     * that goes silent because an asset did not load is worse than one that
+     * falls back to something built from an oscillator.
+     */
+    if (this.#playSample(applauseUrl, 0.85)) {
+      this.#playChime(context, this.#master, context.currentTime);
+      return;
+    }
+
     // Captured locally: TypeScript cannot narrow a private field across the
     // closure below, and the field is optional until audio unlocks.
     const master = this.#master;
     const now = context.currentTime;
-    // Root, major third, fifth — a plain major triad, arpeggiated upward.
-    const notes = [523.25, 659.25, 783.99];
-
     // ── Crowd swell ───────────────────────────────────────────────────────
     this.#crowdBuffer ??= this.#buildCrowd(context);
     const crowd = context.createBufferSource();
@@ -781,19 +933,41 @@ export class AudioManager {
     bandpass.Q.value = 0.75;
 
     const crowdGain = context.createGain();
-    // Swells rather than starts: a crowd takes a moment to react.
+    /*
+     * Two seconds, and roughly twice as loud as it was.
+     *
+     * It ran 1.35s at 0.16 gain, under a chime, band-limited — audible in a
+     * quiet room and inaudible on a phone at arm's length, which is where this
+     * game is played. It swells, holds through the applause, and falls away.
+     */
     crowdGain.gain.setValueAtTime(0.0001, now);
-    crowdGain.gain.exponentialRampToValueAtTime(0.16, now + 0.16);
-    crowdGain.gain.setValueAtTime(0.16, now + 0.5);
-    crowdGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.35);
+    crowdGain.gain.exponentialRampToValueAtTime(0.34, now + 0.14);
+    crowdGain.gain.setValueAtTime(0.34, now + 1.15);
+    crowdGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.0);
 
     crowd.connect(bandpass).connect(crowdGain).connect(master);
     crowd.start(now);
-    crowd.stop(now + 1.4);
-    this.#trackVoice(now + 1.4);
+    crowd.stop(now + 2.05);
+    this.#trackVoice(now + 2.05);
 
-    // ── Chime ─────────────────────────────────────────────────────────────
-    notes.forEach((frequency, index) => {
+    // The claps themselves. Without these the crowd is a wash of voices; a
+    // clap is a transient, and applause is a lot of transients at once.
+    this.#playApplause(context, master, now);
+
+    this.#playChime(context, master, now);
+  }
+
+  /**
+   * A rising major triad over the applause.
+   *
+   * Kept when the recorded crowd took over: the clip says a lot of people
+   * approved, the chime says *you scored*, and they are different pieces of
+   * information. It is also the part that cuts through on a phone speaker,
+   * where a broadband crowd recording loses most of its body.
+   */
+  #playChime(context: AudioContext, master: AudioNode, now: number): void {
+    // Root, major third, fifth — arpeggiated upward.
+    for (const [index, frequency] of [523.25, 659.25, 783.99].entries()) {
       const start = now + 0.16 + index * 0.075;
       const duration = 0.3;
 
@@ -812,12 +986,117 @@ export class AudioManager {
       osc.start(start);
       osc.stop(start + duration + 0.02);
       this.#trackVoice(start + duration + 0.02);
-    });
+    }
   }
 
   /** True when audio exists and is actually running. Surfaced in the UI. */
   get isRunning(): boolean {
     return this.#context?.state === 'running';
+  }
+
+  /**
+   * The crowd's disapproval.
+   *
+   * Built from the same crowd buffer as the cheer, which is what makes them
+   * recognisably the same room. Three things separate them:
+   *
+   * - **Low-passed, not band-passed.** A boo lives in the chest, a cheer in
+   *   the head. Rolling off everything above 700 Hz is most of the character.
+   * - **It sags.** A downward pitch bend on the playback rate, because a boo
+   *   is a held vowel that loses support, where a cheer rises.
+   * - **It starts immediately.** A crowd takes a moment to celebrate and no
+   *   time at all to groan.
+   *
+   * Mixed below the cheer on purpose: this fires on every foul, including the
+   * common ones, and a punishment sound that is louder than the reward gets
+   * old inside one match.
+   */
+  /**
+   * Individual claps, scattered across the cheer.
+   *
+   * A crowd swell is voices; applause is hands, and hands are transients. Each
+   * clap is a very short noise burst through a high bandpass — the crack of
+   * two palms, with no tail.
+   *
+   * They are dense at the front and thin out, which is what a real crowd does:
+   * everyone starts together and then falls out of step. The timing is jittered
+   * so no two claps land on the same instant, because a grid of them reads as a
+   * machine.
+   */
+  #playApplause(context: AudioContext, master: AudioNode, now: number): void {
+    const CLAPS = 34;
+    const SPAN = 1.7;
+
+    for (let i = 0; i < CLAPS; i += 1) {
+      // Squared, so the density falls off rather than spreading evenly.
+      const progress = (i / CLAPS) ** 0.55;
+      const at = now + 0.04 + progress * SPAN + Math.random() * 0.05;
+
+      const burst = this.#noise(context);
+      const band = context.createBiquadFilter();
+      band.type = 'bandpass';
+      // Each pair of hands is a slightly different size.
+      band.frequency.value = 1500 + Math.random() * 2200;
+      band.Q.value = 0.9;
+
+      const gain = context.createGain();
+      // Later claps are quieter: the crowd is winding down, not stopping dead.
+      const level = 0.16 * (1 - progress * 0.55) * (0.6 + Math.random() * 0.4);
+      gain.gain.setValueAtTime(level, at);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.05);
+
+      burst.connect(band).connect(gain).connect(master);
+      burst.start(at);
+      burst.stop(at + 0.06);
+    }
+
+    this.#trackVoice(now + SPAN + 0.2);
+  }
+
+  playBoo(): void {
+    if (!this.#settings.sfxEnabled) return;
+    const context = this.#context;
+    if (!context || !this.#master) return;
+
+    // The recording, falling back to the synthesised crowd until it decodes.
+    if (this.#playSample(booUrl, 0.8)) return;
+
+    const master = this.#master;
+    const now = context.currentTime;
+
+    this.#crowdBuffer ??= this.#buildCrowd(context);
+    const crowd = context.createBufferSource();
+    crowd.buffer = this.#crowdBuffer;
+    // Slower playback drops the whole crowd into a lower register; the ramp
+    // is the sag.
+    crowd.playbackRate.setValueAtTime(0.82, now);
+    crowd.playbackRate.linearRampToValueAtTime(0.66, now + 0.9);
+
+    const lowpass = context.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 700;
+    lowpass.Q.value = 0.6;
+
+    // A shallow dip around 2 kHz takes the last of the hiss out, so it reads
+    // as voices in a room rather than filtered noise.
+    const notch = context.createBiquadFilter();
+    notch.type = 'peaking';
+    notch.frequency.value = 2000;
+    notch.gain.value = -8;
+
+    const gain = context.createGain();
+    // 1.8s and more than twice the level it started at — still under the
+    // cheer, because this fires on every foul and a punishment that shouts
+    // gets old inside one match.
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.26, now + 0.06);
+    gain.gain.setValueAtTime(0.26, now + 1.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
+
+    crowd.connect(lowpass).connect(notch).connect(gain).connect(master);
+    crowd.start(now);
+    crowd.stop(now + 1.85);
+    this.#trackVoice(now + 1.85);
   }
 
   dispose(): void {

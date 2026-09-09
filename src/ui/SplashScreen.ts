@@ -1,5 +1,5 @@
 /**
- * Tap-to-start splash.
+ * The welcome screen.
  *
  * Every browser refuses to start audio before the user has interacted with the
  * page — there is no flag or setting that changes this, and there should not
@@ -11,9 +11,30 @@
  * left. Giving the gesture a screen of its own means the player taps once,
  * deliberately, and then the music is simply playing for the whole time they
  * are choosing — which is what "automatic" actually feels like.
+ *
+ * ## The artwork
+ *
+ * Supplied art, shown whole and unaltered. It is portrait (1024×1536) and the
+ * browser is usually not, so it cannot simply be `cover`-cropped: the logo sits
+ * near the top and the button near the bottom, and a landscape crop loses both.
+ *
+ * So it is drawn twice. A blurred, scaled copy fills the viewport as a ground,
+ * and the real thing sits on top at its own aspect ratio, fitted whole. On a
+ * phone the two coincide and you see only the art; on a desktop the blurred
+ * copy becomes an ambient surround rather than two black bars. Nothing is
+ * cropped and nothing is stretched at any size.
+ *
+ * The painted TAP TO START gets a real control positioned exactly over it —
+ * hover on desktop, press feedback on touch — but the whole screen remains a
+ * single tap target, because a live button sitting where the menu's cards are
+ * about to appear is the arrangement that sent one Android tap three screens
+ * deep.
  */
 
+import welcomeArt from '../assets/welcome.jpg';
+import welcomeWideArt from '../assets/welcome-wide.jpg';
 import { GAME_CONFIG } from '../config/GameConfig';
+import { LAYER, MONO_FONT, injectSheet } from './theme';
 
 /**
  * How long the invisible shield stays up after the tap.
@@ -23,6 +44,35 @@ import { GAME_CONFIG } from '../config/GameConfig';
  */
 const SHIELD_MS = 450;
 
+/**
+ * Two paintings of the same room, one per shape of screen.
+ *
+ * The portrait art is the phone's, and it was the desktop's too until now — a
+ * 2:3 picture centred in a 16:9 window, with a blurred copy filling the sides.
+ * Honest, but the art only occupied the middle third of a desktop display. The
+ * wide plate is drawn for that shape, so the room fills the window.
+ *
+ * The choice is a media query, not a measurement: both are inlined into the
+ * bundle either way, so there is nothing to defer and nothing to decide at
+ * runtime.
+ */
+const ART = {
+  tall: { width: 1024, height: 1536 },
+  wide: { width: 1672, height: 941 },
+} as const;
+
+/**
+ * Where each painted button sits, as fractions of its own artwork.
+ *
+ * Measured off the supplied files. Because each stage is given its art's exact
+ * aspect ratio, these percentages land on the same pixels at every size — no
+ * JavaScript measuring, and nothing to re-run on resize.
+ */
+const BUTTON = {
+  tall: { top: 80.4, height: 6.2, width: 52, left: 50 },
+  wide: { top: 77.2, height: 8.2, width: 24.6, left: 50.2 },
+} as const;
+
 export class SplashScreen {
   readonly #root: HTMLElement;
   #visible = false;
@@ -30,73 +80,59 @@ export class SplashScreen {
   #shieldTimer = 0;
 
   constructor(container: HTMLElement, onStart: () => void) {
+    injectSheet('splash', SPLASH_CSS);
+
     this.#root = document.createElement('div');
-    this.#root.style.cssText = [
-      'position:absolute',
-      'inset:0',
-      'display:none',
-      'flex-direction:column',
-      'align-items:center',
-      'justify-content:center',
-      'gap:22px',
-      'padding:24px',
-      'background:radial-gradient(ellipse at 50% 44%, rgba(30,24,18,0.88), rgba(9,8,7,0.97) 72%)',
-      'backdrop-filter:blur(3px)',
-      'z-index:90',
-      'cursor:pointer',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
+    this.#root.className = 'cx-splash cx-anim';
 
-    const title = document.createElement('h1');
-    title.textContent = 'Carrom Arena';
-    title.style.cssText = [
-      'margin:0',
-      'font:600 clamp(32px, 9vw, 56px)/1.02 system-ui, -apple-system, "Segoe UI", sans-serif',
-      'letter-spacing:0.01em',
-      'background:linear-gradient(180deg, #f7e7cf, #b07a45)',
-      '-webkit-background-clip:text',
-      'background-clip:text',
-      'color:transparent',
-      'text-align:center',
-    ].join(';');
+    // The blurred surround. Not the artwork's job to fill a shape it was not
+    // drawn for, so a scaled copy does it and the art stays whole.
+    const ground = document.createElement('div');
+    ground.className = 'cx-splash-ground';
+    ground.setAttribute('aria-hidden', 'true');
 
-    const prompt = document.createElement('div');
-    prompt.textContent = 'Tap to start';
-    prompt.style.cssText = [
-      'padding:16px 34px',
-      'border-radius:999px',
-      'border:1px solid rgba(176,122,69,0.55)',
-      'background:linear-gradient(170deg, #e8a33d, #b07a45)',
-      'color:#1a140e',
-      'font:700 14px/1 system-ui, -apple-system, sans-serif',
-      'letter-spacing:0.1em',
-      'text-transform:uppercase',
-      'animation:carrom-pulse 2s ease-in-out infinite',
-    ].join(';');
+    const stage = document.createElement('div');
+    stage.className = 'cx-splash-stage';
 
-    const note = document.createElement('p');
-    note.textContent = 'Sound on for the full experience';
-    note.style.cssText = [
-      'margin:0',
-      'font:500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace',
-      'letter-spacing:0.14em',
-      'text-transform:uppercase',
-      'color:#9a8d7d',
-      'text-align:center',
-    ].join(';');
+    const art = document.createElement('img');
+    art.className = 'cx-splash-art cx-splash-art--tall';
+    art.src = welcomeArt;
+    art.width = ART.tall.width;
+    art.height = ART.tall.height;
+    // The art carries the game's name and its instruction as pixels. Without
+    // this a screen reader finds a picture and nothing else.
+    art.alt = 'Carrom Arena — a gold crowned logo on a carrom board. Tap to start.';
+    // It is the whole screen; there is nothing to wait for.
+    art.decoding = 'sync';
+    art.fetchPriority = 'high';
 
-    // A gentle pulse marks the prompt as the thing to press, without motion
-    // for anyone who has asked their system for less of it.
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes carrom-pulse {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50%      { transform: scale(1.04); opacity: 0.92; }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        [style*="carrom-pulse"] { animation: none !important; }
-      }`;
-    document.head.append(style);
+    /*
+     * A real control over the painted one.
+     *
+     * It does not stop the event: pointerdown bubbles to the root, whose
+     * handler starts the game exactly as a tap anywhere else does. The button
+     * exists for what it can express that a picture cannot — a hover state on
+     * a device with a pointer, and a press state under a finger.
+     */
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cx-splash-button cx-focus';
+    // The label is painted into the art; this names it for anyone not seeing it.
+    button.setAttribute('aria-label', 'Tap to start');
+
+    // The wide plate. Only one of the two is ever displayed; the other is
+    // `display: none` and costs a decode it never performs.
+    const wide = document.createElement('img');
+    wide.className = 'cx-splash-art cx-splash-art--wide';
+    wide.src = welcomeWideArt;
+    wide.width = ART.wide.width;
+    wide.height = ART.wide.height;
+    // The tall one already carries the description; two would be read twice.
+    wide.alt = '';
+    wide.setAttribute('aria-hidden', 'true');
+    wide.decoding = 'sync';
+
+    stage.append(art, wide, button);
 
     /*
      * Which build this is.
@@ -107,20 +143,10 @@ export class SplashScreen {
      * discussed was even present. Small and dim enough to disappear.
      */
     const build = document.createElement('div');
+    build.className = 'cx-splash-build';
     build.textContent = `Build ${GAME_CONFIG.build}`;
-    build.style.cssText = [
-      'position:absolute',
-      'bottom:max(10px, env(safe-area-inset-bottom))',
-      'left:0',
-      'right:0',
-      'text-align:center',
-      'font:500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
-      'letter-spacing:0.1em',
-      'color:#4a423a',
-      'pointer-events:none',
-    ].join(';');
 
-    this.#root.append(title, prompt, note, build);
+    this.#root.append(ground, stage, build);
 
     /*
      * Pointerdown, not click: the audio unlock listens on the same event, and
@@ -144,8 +170,9 @@ export class SplashScreen {
       this.#dismissed = true;
       event.preventDefault();
 
-      this.#root.style.opacity = '0';
-      this.#root.style.transition = 'opacity 140ms ease';
+      // The transition out: the art falls back and fades rather than cutting,
+      // so the menu arrives on the same table rather than replacing a picture.
+      this.#root.classList.add('is-leaving');
       // Some browsers send no click at all after a prevented pointerdown, so
       // the shield cannot rely on one arriving to take itself down.
       this.#shieldTimer = window.setTimeout(() => this.hide(), SHIELD_MS);
@@ -187,8 +214,13 @@ export class SplashScreen {
   show(): void {
     this.#visible = true;
     this.#dismissed = false;
-    this.#root.style.opacity = '1';
-    this.#root.style.display = 'flex';
+    this.#root.classList.remove('is-leaving');
+    this.#root.style.display = 'block';
+    // Restart the entry fade. Reading offsetWidth forces the style flush that
+    // makes removing and re-adding the class actually replay the animation.
+    this.#root.classList.remove('is-entering');
+    void this.#root.offsetWidth;
+    this.#root.classList.add('is-entering');
   }
 
   hide(): void {
@@ -204,3 +236,209 @@ export class SplashScreen {
     this.#root.remove();
   }
 }
+
+const SPLASH_CSS = `
+.cx-splash {
+  position: absolute;
+  inset: 0;
+  display: none;
+  z-index: ${LAYER.splash};
+  overflow: hidden;
+  cursor: pointer;
+  background: #0b0806;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * The entry fade, after the loading screen.
+ *
+ * Opacity and transform only — animating either is handed to the compositor,
+ * where a full-screen image can afford it. Animating anything else here would
+ * relayout the largest element on the page every frame.
+ */
+.cx-splash.is-entering .cx-splash-ground {
+  animation: cx-splash-in 620ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/*
+ * The stage gets its own keyframes, carrying the centring translate.
+ *
+ * It shared the ground's, whose \`to\` state is \`transform: scale(1)\` — and with
+ * \`fill: both\` that final value sticks, wiping the translate(-50%, -50%) that
+ * centres the stage. The art ended up hung off the middle of the screen by its
+ * top-left corner.
+ */
+.cx-splash.is-entering .cx-splash-stage {
+  animation: cx-splash-stage-in 620ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes cx-splash-in {
+  from { opacity: 0; transform: scale(1.03); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes cx-splash-stage-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(1.03); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* And the exit, into the menu. */
+/* The exit scales the whole screen, which is not centred by a transform. */
+.cx-splash.is-leaving {
+  opacity: 0;
+  transform: scale(0.99);
+  transition: opacity 260ms ease, transform 320ms ease;
+}
+
+/*
+ * The surround: the same art, scaled up and blurred out.
+ *
+ * A portrait image on a landscape screen has to do something with the sides.
+ * Black bars say "this did not fit"; this says the picture continues.
+ */
+.cx-splash-ground {
+  position: absolute;
+  inset: -6%;
+  background: url(${JSON.stringify(welcomeArt)}) center / cover no-repeat;
+  filter: blur(38px) saturate(0.82) brightness(0.42);
+  transform: scale(1.1);
+}
+
+
+.cx-splash-stage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* The art's own proportions. Percentages inside this box therefore land on
+     the art's own pixels, at any size, with nothing to measure. */
+  aspect-ratio: ${ART.tall.width} / ${ART.tall.height};
+
+  /*
+   * Fill the screen, cropping the sides rather than letterboxing.
+   *
+   * A phone is about 9:19.5; this art is 2:3. Fitted whole it left a dead band
+   * of blurred nothing above and below — which is what a real device showed.
+   * Scaling until both axes are covered crops the left and right edges
+   * instead, and the composition survives that: the logo and the button are
+   * centred, and what goes are the corner taglines.
+   *
+   * The stage keeps the art's aspect ratio either way, so the button's
+   * percentages still land on the same pixels.
+   *
+   * dvh, not vh: on a phone vh is the height with the browser chrome
+   * *collapsed*, so a stage sized in vh is taller than the screen until you
+   * scroll — which is its own dead band.
+   */
+  width: max(100%, calc(100dvh * ${ART.tall.width} / ${ART.tall.height}));
+}
+
+.cx-splash-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Belt and braces: the stage already matches, so nothing is cropped. */
+  object-fit: contain;
+  /* The art is its own frame; a shadow separates it from the blurred ground. */
+  box-shadow: 0 0 90px rgba(0, 0, 0, 0.55);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/*
+ * Which plate is showing.
+ *
+ * Declared AFTER \`.cx-splash-art\` on purpose. It was declared before, and
+ * \`display: block\` on the base class then won on source order — same
+ * specificity, later rule — so both plates rendered at once. On a desktop the
+ * landscape media query came last and hid the portrait one, which is why it
+ * only looked right there; in portrait, where that query does not apply, the
+ * phone drew the tall art and then the wide art stacked underneath it.
+ */
+.cx-splash-art--wide { display: none; }
+.cx-splash-art--tall { display: block; }
+
+/*
+ * The control over the painted button.
+ *
+ * Transparent: the art already draws the button. This only adds the two states
+ * a picture cannot have.
+ */
+.cx-splash-button {
+  position: absolute;
+  top: ${BUTTON.tall.top}%;
+  left: ${BUTTON.tall.left}%;
+  width: ${BUTTON.tall.width}%;
+  height: ${BUTTON.tall.height}%;
+  transform: translate(-50%, -50%);
+  /* Never below the 44px minimum, however small the art is drawn. */
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms ease, box-shadow 200ms ease, background-color 200ms ease;
+}
+
+@media (any-hover: hover) {
+  .cx-splash-button:hover {
+    background-color: rgba(255, 244, 214, 0.14);
+    box-shadow: 0 0 26px 6px rgba(255, 214, 120, 0.34);
+    transform: translate(-50%, -50%) scale(1.03);
+  }
+}
+
+/* Press feedback, which matters most on the device that has no hover. */
+.cx-splash-button:active {
+  transform: translate(-50%, -50%) scale(0.975);
+  background-color: rgba(120, 74, 12, 0.22);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/*
+ * Landscape: swap in the plate drawn for it.
+ *
+ * Keyed on the window being wider than it is tall rather than on a pixel
+ * width, because what makes the portrait art wrong is the shape of the
+ * opening, not the size of it — a phone held sideways wants the wide plate as
+ * much as a monitor does.
+ */
+@media (min-aspect-ratio: 1 / 1) {
+  .cx-splash-stage {
+    aspect-ratio: ${ART.wide.width} / ${ART.wide.height};
+    /* Landscape fits the whole plate: it is drawn for this shape, so there is
+       little to gain from cropping it and a corner tagline to lose. */
+    width: min(100%, calc(100dvh * ${ART.wide.width} / ${ART.wide.height}));
+    max-height: 100%;
+  }
+
+  .cx-splash-art--tall { display: none; }
+  .cx-splash-art--wide { display: block; }
+
+  .cx-splash-ground {
+    background-image: url(${JSON.stringify(welcomeWideArt)});
+  }
+
+  .cx-splash-button {
+    top: ${BUTTON.wide.top}%;
+    left: ${BUTTON.wide.left}%;
+    width: ${BUTTON.wide.width}%;
+    height: ${BUTTON.wide.height}%;
+  }
+}
+
+.cx-splash-build {
+  position: absolute;
+  bottom: max(6px, env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 500 10px/1 ${MONO_FONT};
+  letter-spacing: 0.1em;
+  color: rgba(255, 236, 200, 0.34);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+`;

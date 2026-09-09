@@ -20,8 +20,6 @@ import {
 import { Pockets } from './Pockets';
 import { QualityTier } from '../core/types';
 
-const TABLE_COLOR = 0x1a1512;
-
 export class CarromBoard {
   readonly #group = new THREE.Group();
   readonly #pockets: Pockets;
@@ -34,7 +32,6 @@ export class CarromBoard {
     this.#textures = createBoardTextures(quality);
     this.#frameTextures = createFrameTextures(quality);
 
-    this.#group.add(this.#buildTable());
     this.#group.add(this.#buildSurface(quality));
     this.#group.add(this.#buildFrame(quality));
 
@@ -166,32 +163,6 @@ export class CarromBoard {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'Frame';
     mesh.castShadow = true;
-    mesh.receiveShadow = true;
-
-    this.#disposables.push(geometry, material);
-    return mesh;
-  }
-
-  /**
-   * A dark surface beneath the board.
-   *
-   * Without something to catch the board's shadow the board floats against the
-   * background; this is what grounds it.
-   */
-  #buildTable(): THREE.Mesh {
-    const size = BOARD_CONFIG.frame.outerSize * 3;
-    const geometry = new THREE.PlaneGeometry(size, size);
-    geometry.rotateX(-Math.PI / 2);
-
-    const material = new THREE.MeshStandardMaterial({
-      color: TABLE_COLOR,
-      roughness: 0.9,
-      metalness: 0,
-    });
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = 'Table';
-    mesh.position.y = -BOARD_CONFIG.surface.thickness - 0.02;
     mesh.receiveShadow = true;
 
     this.#disposables.push(geometry, material);

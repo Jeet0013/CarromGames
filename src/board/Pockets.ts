@@ -57,10 +57,18 @@ export class Pockets {
       roughness: 1,
       metalness: 0,
     });
+    /*
+     * Polished gold, brighter than the muted brass it was.
+     *
+     * The artwork's pockets are ringed in a bright, mirror-finish gold, and a
+     * metal that dark simply had nothing to reflect before — three point lights
+     * gave it three specks. With the room environment supplying reflections it
+     * can be as polished as the reference without going to chrome.
+     */
     const lipMaterial = new THREE.MeshStandardMaterial({
-      color: 0x8a6b3f,
-      roughness: 0.35,
-      metalness: 0.85,
+      color: 0xc9982f,
+      roughness: 0.22,
+      metalness: 1,
     });
 
     this.#disposables.push(

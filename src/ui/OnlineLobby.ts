@@ -11,6 +11,8 @@ import { ScreenGate } from './ScreenGate';
 
 export type LobbyMode = 'hosting' | 'joining';
 
+import { injectScreenSheet } from './theme';
+
 export class OnlineLobby {
   readonly #root: HTMLElement;
   readonly #title: HTMLElement;
@@ -31,6 +33,7 @@ export class OnlineLobby {
     onCancel: () => void,
     onJoinCode: (roomId: string) => void,
   ) {
+    injectScreenSheet();
     this.#root = document.createElement('div');
     this.#root.style.cssText = [
       'position:absolute',
@@ -89,18 +92,7 @@ export class OnlineLobby {
     this.#copy = document.createElement('button');
     this.#copy.type = 'button';
     this.#copy.textContent = 'Copy link';
-    this.#copy.style.cssText = [
-      'padding:14px 22px',
-      'border-radius:999px',
-      'border:1px solid rgba(176,122,69,0.55)',
-      'background:linear-gradient(170deg, #e8a33d, #b07a45)',
-      'color:#1a140e',
-      'font:700 13.5px/1 system-ui, -apple-system, sans-serif',
-      'letter-spacing:0.08em',
-      'text-transform:uppercase',
-      'cursor:pointer',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
+    this.#copy.className = 'cx-btn cx-btn--primary cx-focus';
     this.#copy.addEventListener('click', (event) => {
       event.stopPropagation();
       if (this.#gate.blocked(event)) return;
@@ -120,16 +112,7 @@ export class OnlineLobby {
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.textContent = '← Back';
-    cancel.style.cssText = [
-      'padding:16px 26px',
-      'border-radius:999px',
-      'border:1px solid rgba(176,122,69,0.35)',
-      'background:transparent',
-      'color:#9a8d7d',
-      'font:600 13px/1 system-ui, -apple-system, sans-serif',
-      'cursor:pointer',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
+    cancel.className = 'cx-btn cx-btn--quiet cx-focus';
     cancel.addEventListener('click', (event) => {
       event.stopPropagation();
       if (this.#gate.blocked(event)) return;
@@ -190,18 +173,7 @@ export class OnlineLobby {
     const joinButton = document.createElement('button');
     joinButton.type = 'button';
     joinButton.textContent = 'Join';
-    joinButton.style.cssText = [
-      'padding:14px 22px',
-      'border-radius:999px',
-      'border:1px solid rgba(176,122,69,0.35)',
-      'background:transparent',
-      'color:#e8a33d',
-      'font:700 13.5px/1 system-ui, -apple-system, sans-serif',
-      'letter-spacing:0.08em',
-      'text-transform:uppercase',
-      'cursor:pointer',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
+    joinButton.className = 'cx-btn cx-btn--primary cx-focus';
 
     const submit = (): void => {
       const code = this.#joinInput.value;

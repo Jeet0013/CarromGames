@@ -12,6 +12,7 @@
  */
 
 import { PlayerSide } from '../core/PlayerSide';
+import { COINS_PER_PLAYER } from '../gameplay/RuleSet';
 import { CoinColor } from '../core/types';
 
 export interface PlayerPanelData {
@@ -40,7 +41,6 @@ export interface PlayerPanelData {
   readonly compact?: boolean;
 }
 
-const COINS_PER_PLAYER = 9;
 
 export class PlayerPanel {
   readonly #root: HTMLElement;
@@ -58,6 +58,8 @@ export class PlayerPanel {
    */
   #active: boolean | undefined;
 
+  readonly #swatch: HTMLElement;
+  readonly #queen: HTMLElement;
   readonly #compact: boolean;
 
   constructor(container: HTMLElement, data: PlayerPanelData) {
@@ -100,6 +102,47 @@ export class PlayerPanel {
       'max-width:112px',
     ].join(';');
 
+    /*
+     * The readout.
+     *
+     * It was one line of text — "LIGHT · 7 LEFT" — which asked the player to
+     * decode two things at once: which colour is theirs, and how far along
+     * they are. "Light" and "dark" are also not what anyone calls the coins;
+     * they are white and black, and the game already calls them that
+     * internally.
+     *
+     * Now the colour is shown as the coin itself, and the count is potted
+     * against the total so progress is legible without arithmetic. Tabular
+     * figures keep the two panels' numbers in the same columns.
+     */
+    this.#swatch = document.createElement('span');
+    this.#swatch.style.cssText = [
+      'width:11px',
+      'height:11px',
+      'border-radius:50%',
+      'flex:0 0 auto',
+      'display:none',
+      'box-shadow:inset 0 1px 1px rgba(255,255,255,0.35), 0 0 0 1px rgba(0,0,0,0.5)',
+    ].join(';');
+
+    // The Queen, shown only by whoever has covered her.
+    this.#queen = document.createElement('span');
+    this.#queen.textContent = 'Q';
+    this.#queen.title = 'Queen covered';
+    this.#queen.setAttribute('aria-label', 'Queen covered');
+    this.#queen.style.cssText = [
+      'display:none',
+      'flex:0 0 auto',
+      'width:15px',
+      'height:15px',
+      'border-radius:50%',
+      'place-items:center',
+      'background:linear-gradient(160deg, #d8483c, #8e1f18)',
+      'color:#ffe9c9',
+      'font:700 9px/1 system-ui, -apple-system, sans-serif',
+      'box-shadow:0 0 8px rgba(216,72,60,0.55), inset 0 1px 0 rgba(255,255,255,0.3)',
+    ].join(';');
+
     this.#coins = document.createElement('div');
     this.#coins.style.cssText = [
       'font:500 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -108,7 +151,12 @@ export class PlayerPanel {
       'font-variant-numeric:tabular-nums',
     ].join(';');
 
-    text.append(name, this.#coins);
+    // Colour, count and Queen sit on one line under the name.
+    const status = document.createElement('div');
+    status.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0';
+    status.append(this.#swatch, this.#coins, this.#queen);
+
+    text.append(name, status);
     // A compact chip carries the avatar, the score and the turn dot only.
     if (this.#compact) text.style.display = 'none';
 
@@ -140,7 +188,7 @@ export class PlayerPanel {
     this.#root.append(this.#avatar, text, this.#score, this.#turnDot);
     container.append(this.#root);
 
-    this.update({ score: 0, coinsPocketed: 0, color: null, active: false });
+    this.update({ score: 0, coinsPocketed: 0, color: null, active: false, hasQueen: false });
   }
 
   /** Anchor the panel, either to its own edge or where the HUD decides. */
@@ -186,16 +234,30 @@ export class PlayerPanel {
     coinsPocketed: number;
     color: CoinColor | null;
     active: boolean;
+    /** True once this player has pocketed the Queen and covered her. */
+    hasQueen: boolean;
   }): void {
     this.#score.textContent = String(state.score);
 
-    const remaining = Math.max(0, COINS_PER_PLAYER - state.coinsPocketed);
-    // Colour is unassigned until the first pocket; say so rather than guessing.
-    const label =
-      state.color === null
-        ? 'COLOUR UNCLAIMED'
-        : `${state.color === CoinColor.White ? 'LIGHT' : 'DARK'} · ${remaining} LEFT`;
-    this.#coins.textContent = label;
+    const potted = Math.min(COINS_PER_PLAYER, state.coinsPocketed);
+    const remaining = Math.max(0, COINS_PER_PLAYER - potted);
+
+    if (state.color === null) {
+      // Colour is unassigned until the first pocket; say so rather than guess.
+      this.#swatch.style.display = 'none';
+      this.#coins.textContent = 'No colour yet';
+    } else {
+      const white = state.color === CoinColor.White;
+      this.#swatch.style.display = 'block';
+      this.#swatch.style.background = white
+        ? 'radial-gradient(circle at 36% 30%, #ffffff, #d9cdb8)'
+        : 'radial-gradient(circle at 36% 30%, #4a423a, #14110e)';
+      // Potted over total, then what is left — the two numbers a player
+      // actually wants, in a fixed order so the eye can find them.
+      this.#coins.textContent = `${white ? 'White' : 'Black'} · ${potted}/${COINS_PER_PLAYER} · ${remaining} left`;
+    }
+
+    this.#queen.style.display = state.hasQueen ? 'grid' : 'none';
 
     if (state.active !== this.#active) {
       this.#active = state.active;

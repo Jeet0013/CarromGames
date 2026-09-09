@@ -37,16 +37,20 @@ import { CinematicCameraManager } from '../camera/CinematicCameraManager';
 import { NetworkManager, type PieceSnapshot } from '../net/NetworkManager';
 import { OnlineLobby } from '../ui/OnlineLobby';
 import { PlayerSide } from './PlayerSide';
-import { GameMode, PlayerSlot, TurnState } from './types';
+import { GameMode, PlayerSlot, QueenState, TurnState } from './types';
 import { GAME_CONFIG, IS_DEV } from '../config/GameConfig';
 import { CameraManager } from '../rendering/CameraManager';
 import { DebugCameraTuner } from '../rendering/DebugCameraTuner';
+import { COINS_PER_PLAYER } from '../gameplay/RuleSet';
+import { Haptics } from '../ui/Haptics';
+import { Environment } from '../rendering/Environment';
 import { Lighting } from '../rendering/Lighting';
 import { Renderer } from '../rendering/Renderer';
+import { Room } from '../rendering/Room';
 import { SceneManager } from '../rendering/SceneManager';
 import { EventBus } from './EventBus';
 import { GameLoop } from './GameLoop';
-import type { QualityTier } from './types';
+import { QualityTier } from './types';
 
 export interface GameOptions {
   /** Element the canvas is mounted into. Sizing follows this element. */
@@ -63,6 +67,8 @@ export class Game {
   readonly #scene: SceneManager;
   readonly #camera: CameraManager;
   readonly #lighting: Lighting;
+  readonly #environment: Environment;
+  readonly #room: Room;
   readonly #loop: GameLoop;
   readonly #board: CarromBoard;
   readonly #physics: PhysicsWorld;
@@ -86,6 +92,7 @@ export class Game {
   readonly #pocketEffect: PocketEffect;
   readonly #victory: VictoryScreen;
   readonly #powder: PowderEffect;
+  readonly #haptics: Haptics;
   readonly #powderCan: PowderCan;
   readonly #cinematic: CinematicCameraManager;
   readonly #net: NetworkManager;
@@ -110,11 +117,28 @@ export class Game {
     this.#renderer = new Renderer({ canvas: this.#canvas, quality });
     this.#scene = new SceneManager();
     this.#camera = new CameraManager();
-    this.#lighting = new Lighting(quality);
+    // Image-based lighting, baked once from a room built in code. The low
+    // tier goes without: the bake is cheap but the per-fragment IBL lookup on
+    // every physical material is not, and that tier exists for GPUs that are
+    // already struggling.
+    this.#environment = new Environment();
+    const hasEnvironment = quality !== QualityTier.Low;
+    if (hasEnvironment) {
+      // Half strength. The bake is authored bright so highlights have somewhere
+      // to roll off, which is the right way to author it and the wrong way to
+      // apply it at full weight: the environment is the fill, and the key light
+      // is still what shapes the board.
+      this.#scene.setEnvironment(this.#environment.build(this.#renderer.three), 0.5);
+    }
 
-    // Lights are permanent furniture — they must survive a board teardown
-    // between matches.
+    this.#lighting = new Lighting(quality, hasEnvironment);
+
+    // Lights and the room are permanent furniture — they must survive a board
+    // teardown between matches.
     this.#scene.addPermanent(this.#lighting.group);
+
+    this.#room = new Room(quality);
+    this.#scene.addPermanent(this.#room.group);
 
     // The board is content, not furniture: a level change tears it down and
     // rebuilds it, which is why it goes through `add` rather than `addPermanent`.
@@ -138,6 +162,10 @@ export class Game {
 
     // Supplies camera offsets only; CameraManager keeps ownership of position.
     this.#cinematic = new CinematicCameraManager(this.events, this.#camera, this.#pieces);
+
+    // Feel, on the two events worth feeling. Android only in practice; an
+    // iPhone gets the sound and nothing else, which is the whole fallback.
+    this.#haptics = new Haptics(this.events);
 
     this.#powder = new PowderEffect();
     this.#scene.addPermanent(this.#powder.group);
@@ -358,6 +386,7 @@ export class Game {
   /** Announce the result in the winner's own terms. */
   #showResult(winner: PlayerSlot, by: PlayerSlot): void {
     const seats = SEAT_LAYOUTS[this.#lastMode];
+    const match = this.#turns.match;
     const seat = seats.find((s) => s.slot === winner);
     const vsComputer = this.#lastMode === GameMode.QuickMatch;
     const online = this.#net.isOnline;
@@ -387,6 +416,22 @@ export class Game {
           ? 'All nine coins pocketed, with the Queen settled.'
           : 'All nine of their coins pocketed, with the Queen settled.',
       playerWon: humanWon,
+      // Every seat's final board, winner first, so the eye lands on the result
+      // before the detail.
+      rows: seats
+        .map((s) => {
+          const player = match.players[s.slot];
+          return {
+            name: s.name,
+            color: player.color,
+            potted: Math.min(COINS_PER_PLAYER, player.coinsPocketed),
+            total: COINS_PER_PLAYER,
+            hasQueen:
+              match.queen === QueenState.Covered && match.queenPocketedBy === s.slot,
+            isWinner: s.slot === winner,
+          };
+        })
+        .sort((a, b) => Number(b.isWinner) - Number(a.isWinner)),
     });
   }
 
@@ -856,7 +901,17 @@ export class Game {
     // The visual reads the physics world's own powder level, so what is shown
     // and what the coins feel can never drift apart.
     const powderLevel = this.#physics.powderLevel;
-    this.#powder.update(frameDelta, powderLevel);
+    // Dust off the striker while it runs, so a slick board looks slick rather
+    // than just behaving strangely.
+    const striker = this.#pieces.striker;
+    const strikerMotion = striker.active
+      ? {
+          x: striker.position.x,
+          z: striker.position.z,
+          speed: this.#physics.speedOf(striker.id),
+        }
+      : null;
+    this.#powder.update(frameDelta, powderLevel, strikerMotion);
     this.#powderCan.setLevel(powderLevel);
     this.#physicsDebug?.update();
     this.#renderer.render(this.#scene.scene, this.#camera.camera);
@@ -923,6 +978,7 @@ export class Game {
     this.#net.disconnect();
     this.#lobby.dispose();
     this.#powderCan.dispose();
+    this.#haptics.dispose();
     this.#powder.dispose();
     this.#victory.dispose();
     this.#pocketEffect.dispose();
@@ -941,6 +997,8 @@ export class Game {
     this.#physicsDebug?.dispose();
     this.#physics.dispose();
     this.#board.dispose();
+    this.#room.dispose();
+    this.#environment.dispose();
     this.#lighting.dispose();
     this.#scene.dispose();
     this.#renderer.dispose();

@@ -15,6 +15,7 @@
  */
 
 import { ScreenGate } from './ScreenGate';
+import { brandMark, injectScreenSheet, injectSheet } from './theme';
 
 const STEPS: ReadonlyArray<{
   readonly title: string;
@@ -68,16 +69,11 @@ export class Tutorial {
   constructor(container: HTMLElement, onDismiss: () => void) {
     this.#onDismiss = onDismiss;
 
+    injectScreenSheet();
+    injectSheet('tutorial', TUTORIAL_CSS);
+
     this.#root = document.createElement('div');
-    this.#root.style.cssText = [
-      'position:absolute',
-      'inset:0',
-      'display:none',
-      'flex-direction:column',
-      'background:rgba(10,9,8,0.9)',
-      'backdrop-filter:blur(4px)',
-      'z-index:70',
-    ].join(';');
+    this.#root.className = 'cx-tutorial';
 
     /*
      * The content scrolls; the action bar does not.
@@ -89,74 +85,54 @@ export class Tutorial {
      * clear the bar instead of hiding under it.
      */
     const scroll = document.createElement('div');
-    scroll.style.cssText = [
-      'flex:1 1 auto',
-      'min-height:0',
-      'overflow-y:auto',
-      '-webkit-overflow-scrolling:touch',
-      'overscroll-behavior:contain',
-      'display:flex',
-      'flex-direction:column',
-      'align-items:center',
-      'gap:18px',
-      'padding:max(18px, env(safe-area-inset-top)) 18px 104px',
-    ].join(';');
+    scroll.className = 'cx-tutorial-scroll';
+
+    const panel = document.createElement('div');
+    panel.className = 'cx-screen-panel cx-plate cx-tutorial-panel';
+
+    const head = document.createElement('header');
+    head.className = 'cx-screen-head';
+    head.append(brandMark('sm'));
 
     const heading = document.createElement('h2');
+    heading.className = 'cx-eyebrow';
     heading.textContent = 'How to play';
-    heading.style.cssText = [
-      'margin:0',
-      'font:600 clamp(20px, 5vw, 27px)/1.1 system-ui, -apple-system, sans-serif',
-      'color:#f7e7cf',
-      'letter-spacing:0.01em',
-    ].join(';');
 
-    const steps = document.createElement('div');
-    steps.style.cssText = [
-      'display:grid',
-      'grid-template-columns:repeat(auto-fit, minmax(min(210px, 100%), 1fr))',
-      'gap:12px',
-      'width:min(720px, 100%)',
-    ].join(';');
-    STEPS.forEach((step, index) => steps.append(this.#buildStep(step, index + 1)));
+    const headRule = document.createElement('hr');
+    headRule.className = 'cx-rule cx-tutorial-rule';
+    head.append(heading, headRule);
+
+    /*
+     * The steps are a list, not three cards side by side.
+     *
+     * Three equal columns is the layout this screen had and the one thing a
+     * player cannot do with it is read it in order — at phone width they
+     * stacked anyway, and at desktop width the eye had no reason to start on
+     * the left. Numbered rows are ordered by construction.
+     */
+    const steps = document.createElement('ol');
+    steps.className = 'cx-list cx-tutorial-steps';
+    STEPS.forEach((step, index) => {
+      const item = document.createElement('li');
+      item.append(this.#buildStep(step, index + 1));
+      steps.append(item);
+    });
 
     // ── Rules ─────────────────────────────────────────────────────────────
     // Controls alone are not enough: a player who does not know the win
     // condition has no way to tell whether they are doing well.
-    const rules = document.createElement('div');
-    rules.style.cssText = [
-      'display:flex',
-      'flex-direction:column',
-      'gap:7px',
-      'width:min(720px, 100%)',
-      'padding:14px 16px',
-      'border-radius:14px',
-      'border:1px solid rgba(176,122,69,0.26)',
-      'background:rgba(24,20,16,0.7)',
-    ].join(';');
+    const rules = document.createElement('section');
+    rules.className = 'cx-tutorial-rules';
 
-    const rulesTitle = document.createElement('span');
+    const rulesTitle = document.createElement('h3');
     rulesTitle.textContent = 'How to win';
-    rulesTitle.style.cssText = [
-      'font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
-      'letter-spacing:0.18em',
-      'text-transform:uppercase',
-      'color:#e8a33d',
-    ].join(';');
+    rulesTitle.className = 'cx-eyebrow cx-tutorial-ruleshead';
 
     const list = document.createElement('ul');
-    list.style.cssText = [
-      'margin:0',
-      'padding-left:17px',
-      'display:flex',
-      'flex-direction:column',
-      'gap:5px',
-      'font:400 13.5px/1.5 system-ui, -apple-system, sans-serif',
-      'color:#c9bdae',
-    ].join(';');
+    list.className = 'cx-tutorial-ruleslist';
 
     for (const rule of [
-      'The first coin you pocket claims that colour — light or dark. The other colour becomes your opponent\u2019s.',
+      'The first coin you pocket claims that colour — white or black. The other colour becomes your opponent\u2019s.',
       'Pocket one of your own coins and you shoot again. Miss, and the turn passes.',
       'Pocket the red Queen and you must cover her by pocketing one of your own coins on the next shot, or she goes back to the centre.',
       'Pocket the striker and it is a foul: your turn ends and one of your coins returns to the board.',
@@ -172,18 +148,7 @@ export class Tutorial {
     const done = document.createElement('button');
     done.type = 'button';
     done.textContent = 'Got it';
-    done.style.cssText = [
-      'padding:15px 34px',
-      'border-radius:999px',
-      'border:1px solid rgba(176,122,69,0.55)',
-      'background:linear-gradient(170deg, #e8a33d, #b07a45)',
-      'color:#1a140e',
-      'font:700 14px/1 system-ui, -apple-system, sans-serif',
-      'letter-spacing:0.09em',
-      'text-transform:uppercase',
-      'cursor:pointer',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
+    done.className = 'cx-btn cx-btn--primary cx-focus';
     done.addEventListener('click', (event) => {
       event.stopPropagation();
       if (this.#gate.blocked(event)) return;
@@ -191,21 +156,11 @@ export class Tutorial {
       this.#onDismiss();
     });
 
-    scroll.append(heading, steps, rules);
+    panel.append(head, steps, rules);
+    scroll.append(panel);
 
     const footer = document.createElement('div');
-    footer.style.cssText = [
-      'position:absolute',
-      'left:0',
-      'right:0',
-      'bottom:0',
-      'display:flex',
-      'justify-content:center',
-      'padding:14px 18px max(16px, env(safe-area-inset-bottom))',
-      // Fades rather than cuts, so content is visibly continuing underneath.
-      'background:linear-gradient(to top, rgba(10,9,8,0.97) 55%, rgba(10,9,8,0))',
-      'pointer-events:none',
-    ].join(';');
+    footer.className = 'cx-tutorial-footer';
     done.style.pointerEvents = 'auto';
     footer.append(done);
 
@@ -217,44 +172,32 @@ export class Tutorial {
     step: { title: string; body: string; art: string },
     number: number,
   ): HTMLElement {
-    const card = document.createElement('div');
-    card.style.cssText = [
-      'display:flex',
-      'flex-direction:column',
-      'align-items:center',
-      'gap:9px',
-      'padding:16px 15px',
-      'border-radius:14px',
-      'border:1px solid rgba(176,122,69,0.26)',
-      'background:linear-gradient(165deg, rgba(34,28,22,0.95), rgba(19,16,13,0.95))',
-      'text-align:center',
-    ].join(';');
+    const row = document.createElement('div');
+    row.className = 'cx-row cx-tutorial-step';
 
-    const art = document.createElement('div');
-    art.style.cssText = 'color:#b07a45;line-height:0';
-    art.innerHTML = `<svg viewBox="0 0 100 92" width="94" height="86" aria-hidden="true">${step.art}</svg>`;
+    const art = document.createElement('span');
+    art.className = 'cx-tutorial-art';
+    art.innerHTML = `<svg viewBox="0 0 100 92" aria-hidden="true">${step.art}</svg>`;
 
-    const index = document.createElement('span');
-    index.textContent = `Step ${number}`;
-    index.style.cssText = [
-      'font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
-      'letter-spacing:0.18em',
-      'text-transform:uppercase',
-      'color:#e8a33d',
-    ].join(';');
+    const text = document.createElement('span');
+    text.className = 'cx-row-text';
 
     const title = document.createElement('span');
+    title.className = 'cx-row-name';
     title.textContent = step.title;
-    title.style.cssText =
-      'font:600 16px/1.25 system-ui, -apple-system, sans-serif;color:#f4ece1';
 
     const body = document.createElement('span');
+    body.className = 'cx-row-blurb';
     body.textContent = step.body;
-    body.style.cssText =
-      'font:400 13.5px/1.5 system-ui, -apple-system, sans-serif;color:#9a8d7d;max-width:30ch';
 
-    card.append(art, index, title, body);
-    return card;
+    text.append(title, body);
+
+    const index = document.createElement('span');
+    index.className = 'cx-row-meta';
+    index.textContent = `Step ${number}`;
+
+    row.append(art, text, index);
+    return row;
   }
 
   get visible(): boolean {
@@ -276,3 +219,91 @@ export class Tutorial {
     this.#root.remove();
   }
 }
+
+const TUTORIAL_CSS = `
+.cx-tutorial {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  background: radial-gradient(ellipse at 50% 42%, rgba(26, 20, 15, 0.86), rgba(9, 8, 7, 0.96) 74%);
+  backdrop-filter: blur(4px);
+  /* Above the menu it was opened from, below a result. */
+  z-index: 70;
+}
+
+/*
+ * The content scrolls; the action bar does not.
+ *
+ * On a phone the three steps plus the rules run past one screen, so a button
+ * placed after them sits below the fold — a player has to discover they can
+ * scroll before they can start. The padding below lets the last line clear
+ * the bar instead of hiding under it.
+ */
+.cx-tutorial-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 18px 104px;
+}
+
+.cx-tutorial-panel { width: min(520px, 100%); }
+.cx-tutorial-rule { width: 100%; }
+
+.cx-tutorial-steps { counter-reset: step; }
+
+/* Not a button: nothing here is pressable, so nothing should invite a press. */
+.cx-tutorial-step { cursor: default; }
+.cx-tutorial-step:active { transform: none; background-color: transparent; }
+
+.cx-tutorial-art {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  color: #c9982f;
+  line-height: 0;
+}
+
+.cx-tutorial-art svg { width: 54px; height: 50px; }
+
+.cx-tutorial-rules {
+  margin: clamp(10px, 2vh, 16px) clamp(20px, 5vw, 30px) 0;
+  padding: 14px 0 4px;
+  border-top: 1px solid rgba(201, 152, 47, 0.13);
+}
+
+.cx-tutorial-ruleshead { text-align: left; margin-bottom: 10px; }
+
+.cx-tutorial-ruleslist {
+  margin: 0;
+  padding-left: 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: 400 clamp(12.5px, 3.2vw, 13.5px) / 1.55 system-ui, -apple-system, sans-serif;
+  color: #cdbfab;
+  text-wrap: pretty;
+}
+
+.cx-tutorial-ruleslist::marker { color: #c9982f; }
+
+.cx-tutorial-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 14px 18px max(16px, env(safe-area-inset-bottom));
+  /* Fades rather than cuts, so content is visibly continuing underneath. */
+  background: linear-gradient(to top, rgba(10, 9, 8, 0.97) 55%, rgba(10, 9, 8, 0));
+  pointer-events: none;
+}
+`;
