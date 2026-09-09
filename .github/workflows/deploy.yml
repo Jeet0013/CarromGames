@@ -1,1 +1,78 @@
 # Publish the game to GitHub Pages.
+#
+# The site is served from the `gh-pages` branch, which holds a single
+# self-contained `index.html` — the output of `npm run build:single`, whose
+# whole point is that it needs no server, no module resolution and no asset
+# requests. That is why the branch has two files in it.
+#
+# It used to be built and pushed by hand, and the trouble with a manual step is
+# that it is invisible when it does not happen: fixes were merged, the site
+# went on serving the build that predated them, and the bug they fixed went on
+# being reported from a phone. Nobody was wrong — the step simply had no way of
+# announcing that it had been skipped.
+#
+# Typecheck and tests gate the deploy, so a red build cannot reach the site.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # So a deploy can be re-run without an empty commit to force it.
+  workflow_dispatch:
+
+# Only what pushing to gh-pages needs.
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-deploy
+  # Let a running deploy finish rather than publishing a half-written branch.
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build the self-contained page
+        run: npm run build:single
+
+      - name: Assemble the published tree
+        run: |
+          set -euo pipefail
+          rm -rf public-site
+          mkdir -p public-site
+          cp dist-single/carrom-arena.html public-site/index.html
+          # Without this, Pages runs the output through Jekyll, which discards
+          # files and directories beginning with an underscore.
+          touch public-site/.nojekyll
+
+      - name: Publish to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd public-site
+          git init -q
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "deploy: ${GITHUB_SHA::7} — ${GITHUB_REF_NAME}"
+          # The branch is a published artifact, not history worth keeping, so it
+          # is replaced rather than added to.
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
