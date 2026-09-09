@@ -201,9 +201,47 @@ export class AudioManager {
       window.addEventListener(type, unlock, { capture: true, passive: true });
     }
 
-    // Returning from the background leaves the context suspended on iOS.
+    /*
+     * Silence while the page is not visible; sound back when it is.
+     *
+     * iOS suspends the context on its own when the screen locks, which is why
+     * this only ever resumed. Android does not: Chrome keeps a WebAudio graph
+     * running in a backgrounded tab, so a phone that went to sleep mid-match
+     * carried on cheering and booing in the user's pocket.
+     *
+     * Suspending explicitly makes both platforms behave the same way, and it
+     * is also the honest thing to do with someone's speaker. `resume` is
+     * still needed on the way back because iOS may have suspended it itself.
+     */
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) void this.#context?.resume();
+      const context = this.#context;
+      if (!context) return;
+
+      if (document.hidden) {
+        void context.suspend();
+        // The silent keep-alive track has no reason to run either, and leaving
+        // it playing is what keeps the audio session marked active.
+        this.#silentTrack?.pause();
+        return;
+      }
+
+      void context.resume();
+      // Only restart the keep-alive if sound is actually wanted.
+      if (this.#settings.sfxEnabled) {
+        void this.#silentTrack?.play().catch(() => {});
+      }
+    });
+
+    /*
+     * `pagehide` as well as `visibilitychange`.
+     *
+     * Locking an iPhone while Safari is frontmost does not always fire a
+     * visibility change; `pagehide` does. Firing both is harmless — suspending
+     * an already-suspended context is a no-op.
+     */
+    window.addEventListener('pagehide', () => {
+      void this.#context?.suspend();
+      this.#silentTrack?.pause();
     });
   }
 

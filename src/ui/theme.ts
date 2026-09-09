@@ -51,9 +51,28 @@ export const COLORS = {
   plateDeep: 'rgba(17, 14, 11, 0.94)',
 } as const;
 
-/** The metal, as a fill. Cool highlight, warm body, dark waist, lit lower edge. */
+/**
+ * The metal as *lettering*: cool highlight, warm body, dark waist, lit edge.
+ *
+ * The hard step down to #bd8722 at the waist is deliberate here. Clipped to
+ * glyph shapes it reads as the bend where a letter's face turns under, and it
+ * is what stops gold type looking like flat yellow paint.
+ */
 export const GOLD =
   'linear-gradient(179deg, #fffdf2 2%, #ffe9a4 19%, #f3c64f 41%, #bd8722 53%, #f4d275 69%, #fff7db 94%)';
+
+/**
+ * The metal as a *surface*, for filling a button.
+ *
+ * The same ramp that flatters a letterform bands badly across a wide pill: the
+ * waist becomes a dark stripe running the width of the control, and the jump
+ * back up to a highlight below it draws a second line. What sells a curved
+ * metal face is a gradual roll, so this has more stops, no step wider than
+ * about 15% of the height, and a waist that dips rather than drops — nine
+ * stops instead of six, none of them more than a shade apart.
+ */
+export const GOLD_SURFACE =
+  'linear-gradient(180deg, #fff8dd 0%, #fdeeb4 12%, #f7dd91 26%, #efc966 42%, #e3b449 54%, #e9c05a 64%, #f3d581 78%, #fbeab0 90%, #fff9e4 100%)';
 
 /**
  * Stacking order, named.
@@ -412,10 +431,15 @@ export function injectScreenSheet(): void {
 }
 
 .cx-btn--primary {
-  border: 1px solid #f3dc9a;
-  background: ${GOLD};
+  border: 1px solid #f0d896;
+  background: ${GOLD_SURFACE};
   color: #3a2408;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.5),
+    /* A bright lip on top and a warm one underneath: the two edges of a
+       rounded metal face catching the light and bouncing it back. */
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    inset 0 -1px 0 rgba(140, 92, 16, 0.35);
 }
 
 .cx-btn--quiet {
