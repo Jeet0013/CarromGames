@@ -12,6 +12,7 @@
  */
 
 import { GameMode } from '../core/types';
+import { ScreenGate } from './ScreenGate';
 
 export interface MenuOption {
   readonly mode: GameMode;
@@ -66,6 +67,8 @@ export const MENU_OPTIONS: readonly MenuOption[] = [
 export class MainMenu {
   readonly #root: HTMLElement;
   readonly #onSelect: (mode: GameMode) => void;
+  /** Ignores the click the splash's own tap leaves behind. */
+  readonly #gate = new ScreenGate();
   #visible = false;
 
   constructor(container: HTMLElement, onSelect: (mode: GameMode) => void) {
@@ -229,6 +232,8 @@ export class MainMenu {
       card.addEventListener('click', (event) => {
         // The canvas listens for pointer events beneath this overlay.
         event.stopPropagation();
+        // A tap that opened this menu must not also choose from it.
+        if (this.#gate.blocked(event)) return;
         rest();
         this.#onSelect(option.mode);
       });
@@ -243,6 +248,7 @@ export class MainMenu {
 
   show(): void {
     this.#visible = true;
+    this.#gate.open();
     this.#root.style.display = 'flex';
   }
 

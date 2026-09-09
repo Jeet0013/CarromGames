@@ -136,6 +136,8 @@ export const FoulKind = {
   OpponentCoinPocketed: 'OPPONENT_COIN_POCKETED',
   NoContact: 'NO_CONTACT',
   IllegalStrikerPlacement: 'ILLEGAL_STRIKER_PLACEMENT',
+  /** Taking your final coin while the Queen is still on the board. */
+  LastCoinBeforeQueen: 'LAST_COIN_BEFORE_QUEEN',
 } as const;
 export type FoulKind = (typeof FoulKind)[keyof typeof FoulKind];
 

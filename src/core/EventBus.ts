@@ -71,7 +71,9 @@ export interface GameEvents {
   /** Coin ownership resolved from the first valid pocket. */
   'rules:ownershipAssigned': { readonly player: PlayerSlot; readonly color: CoinColor };
   'rules:foul': { readonly player: PlayerSlot; readonly kind: FoulKind };
-  'rules:gameComplete': { readonly winner: PlayerSlot };
+  /** `by` is who took the final shot — not always the winner, since a player's
+   *  board can be cleared by their opponent's fouls. */
+  'rules:gameComplete': { readonly winner: PlayerSlot; readonly by: PlayerSlot };
 
   /** Queen lifecycle moved — drives the COVER THE QUEEN indicator. */
   'queen:stateChanged': { readonly from: QueenState; readonly to: QueenState };

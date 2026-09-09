@@ -26,9 +26,20 @@ export const UNITS = {
 /** Convert a real-world measurement in centimetres to world units. */
 export const cm = (centimetres: number): number => (centimetres / 100) * UNITS.PER_METRE;
 
+/** Substituted by Vite at build time; see `vite.config.ts`. */
+declare const __BUILD_ID__: string | undefined;
+
 export const GAME_CONFIG = {
   name: 'Carrom Arena 3D',
   version: '0.1.0',
+  /**
+   * Identifies the build itself, not the release.
+   *
+   * Shown on the splash because the thing being tested is usually on a phone
+   * at the far end of a share link, and "which build is that?" should not need
+   * asking.
+   */
+  build: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev',
 
   /**
    * Fixed simulation step. Physics and the rule machine advance in whole steps

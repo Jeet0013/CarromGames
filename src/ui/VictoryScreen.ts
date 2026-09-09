@@ -6,6 +6,8 @@
  * menu's card language so it reads as part of the same game.
  */
 
+import { ScreenGate } from './ScreenGate';
+
 export interface VictoryDetails {
   readonly headline: string;
   readonly subtitle: string;
@@ -17,6 +19,14 @@ export class VictoryScreen {
   readonly #root: HTMLElement;
   readonly #headline: HTMLElement;
   readonly #subtitle: HTMLElement;
+  /**
+   * Ignores the click left behind by the tap that opened this screen.
+   *
+   * The result appears the instant a shot resolves, which can be while the
+   * player's finger is still coming off the board — and "Play again" sits in
+   * the middle of the screen.
+   */
+  readonly #gate = new ScreenGate();
   #visible = false;
 
   constructor(container: HTMLElement, onPlayAgain: () => void, onMenu: () => void) {
@@ -58,6 +68,7 @@ export class VictoryScreen {
     const again = this.#button('Play again', true);
     again.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (this.#gate.blocked(e)) return;
       this.hide();
       onPlayAgain();
     });
@@ -65,6 +76,7 @@ export class VictoryScreen {
     const menu = this.#button('Main menu', false);
     menu.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (this.#gate.blocked(e)) return;
       this.hide();
       onMenu();
     });
@@ -97,6 +109,7 @@ export class VictoryScreen {
 
   show(details: VictoryDetails): void {
     this.#visible = true;
+    this.#gate.open();
     this.#headline.textContent = details.headline;
     // Win and loss get different colour, not just different words — the result
     // should be readable before the text is.

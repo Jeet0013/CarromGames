@@ -14,6 +14,8 @@
  * to shoot forwards" is far clearer shown than described.
  */
 
+import { ScreenGate } from './ScreenGate';
+
 const STEPS: ReadonlyArray<{
   readonly title: string;
   readonly body: string;
@@ -53,6 +55,14 @@ const STEPS: ReadonlyArray<{
 export class Tutorial {
   readonly #root: HTMLElement;
   readonly #onDismiss: () => void;
+  /**
+   * Ignores the click left behind by the tap that opened this screen.
+   *
+   * This one mattered most: choosing a mode opens the tutorial, so a single
+   * tap on the splash could cascade all the way through — start the game,
+   * pick a mode, and land the player on "How to play" having chosen nothing.
+   */
+  readonly #gate = new ScreenGate();
   #visible = false;
 
   constructor(container: HTMLElement, onDismiss: () => void) {
@@ -176,6 +186,7 @@ export class Tutorial {
     ].join(';');
     done.addEventListener('click', (event) => {
       event.stopPropagation();
+      if (this.#gate.blocked(event)) return;
       this.hide();
       this.#onDismiss();
     });
@@ -252,6 +263,7 @@ export class Tutorial {
 
   show(): void {
     this.#visible = true;
+    this.#gate.open();
     this.#root.style.display = 'flex';
   }
 

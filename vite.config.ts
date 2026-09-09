@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite';
 
+import { buildId } from './scripts/build-id.mjs';
+
 export default defineConfig({
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId()),
+  },
   server: {
     host: true, // expose on LAN so the game can be tested on a real phone
     port: 5173,

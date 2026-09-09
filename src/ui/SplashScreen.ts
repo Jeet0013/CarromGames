@@ -13,9 +13,21 @@
  * are choosing — which is what "automatic" actually feels like.
  */
 
+import { GAME_CONFIG } from '../config/GameConfig';
+
+/**
+ * How long the invisible shield stays up after the tap.
+ *
+ * Only a fallback: the shield normally comes down the moment it swallows the
+ * click. This bounds the wait for the browsers that never send one.
+ */
+const SHIELD_MS = 450;
+
 export class SplashScreen {
   readonly #root: HTMLElement;
   #visible = false;
+  #dismissed = false;
+  #shieldTimer = 0;
 
   constructor(container: HTMLElement, onStart: () => void) {
     this.#root = document.createElement('div');
@@ -86,14 +98,84 @@ export class SplashScreen {
       }`;
     document.head.append(style);
 
-    this.#root.append(title, prompt, note);
-    // Pointerdown, not click: the audio unlock listens on the same event, and
-    // starting both from one gesture is what makes the music arrive with the
-    // menu rather than a beat behind it.
-    this.#root.addEventListener('pointerdown', () => {
-      this.hide();
+    /*
+     * Which build this is.
+     *
+     * Deliberately visible rather than hidden in the console: the device that
+     * matters is a phone at the other end of a share link, and every bug
+     * report so far has had to start by establishing whether the fix being
+     * discussed was even present. Small and dim enough to disappear.
+     */
+    const build = document.createElement('div');
+    build.textContent = `Build ${GAME_CONFIG.build}`;
+    build.style.cssText = [
+      'position:absolute',
+      'bottom:max(10px, env(safe-area-inset-bottom))',
+      'left:0',
+      'right:0',
+      'text-align:center',
+      'font:500 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
+      'letter-spacing:0.1em',
+      'color:#4a423a',
+      'pointer-events:none',
+    ].join(';');
+
+    this.#root.append(title, prompt, note, build);
+
+    /*
+     * Pointerdown, not click: the audio unlock listens on the same event, and
+     * starting both from one gesture is what makes the music arrive with the
+     * menu rather than a beat behind it.
+     *
+     * But one tap on a touchscreen is a *sequence* — pointerdown, pointerup,
+     * then a synthesised click — and the browser decides a click's target when
+     * the finger lifts, by hit-testing the page as it stands at that moment.
+     * Hiding this screen on pointerdown therefore handed the click to whatever
+     * had just taken its place: on a phone the "Tap to start" pill sits almost
+     * exactly over the mode cards, so the single tap started the game *and*
+     * chose a mode, and the menu appeared to skip past.
+     *
+     * The fix is not to hide on pointerdown but to go transparent and stay on
+     * top, so this element is still the hit-test answer when the click lands
+     * and can swallow it. Then it leaves.
+     */
+    this.#root.addEventListener('pointerdown', (event) => {
+      if (this.#dismissed) return;
+      this.#dismissed = true;
+      event.preventDefault();
+
+      this.#root.style.opacity = '0';
+      this.#root.style.transition = 'opacity 140ms ease';
+      // Some browsers send no click at all after a prevented pointerdown, so
+      // the shield cannot rely on one arriving to take itself down.
+      this.#shieldTimer = window.setTimeout(() => this.hide(), SHIELD_MS);
+
       onStart();
     });
+
+    /*
+     * The rest of the gesture dies here rather than on the menu underneath.
+     *
+     * Absorbing and standing down happen in the *same* handler deliberately.
+     * They were two listeners on this element, one stopping propagation and a
+     * later one hiding — which only works if a stopped event still reaches the
+     * other listeners on its own target. Implementations disagree about that,
+     * and where it does not hold the shield never learns the tap is over and
+     * sits invisibly across the menu until its timer expires. A dead half
+     * second where nothing responds is exactly the fault this screen exists to
+     * prevent, so nothing here depends on listener ordering.
+     */
+    const swallow = (event: Event): void => {
+      if (!this.#dismissed) return;
+      event.preventDefault();
+      event.stopPropagation();
+      // The click is the last event of a tap. Once it has been absorbed the
+      // shield has done its job and must get out of the way.
+      if (event.type === 'click') this.hide();
+    };
+    for (const type of ['pointerup', 'mousedown', 'mouseup', 'touchend', 'click']) {
+      this.#root.addEventListener(type, swallow, { capture: true });
+    }
 
     container.append(this.#root);
   }
@@ -104,15 +186,21 @@ export class SplashScreen {
 
   show(): void {
     this.#visible = true;
+    this.#dismissed = false;
+    this.#root.style.opacity = '1';
     this.#root.style.display = 'flex';
   }
 
   hide(): void {
+    window.clearTimeout(this.#shieldTimer);
+    this.#shieldTimer = 0;
     this.#visible = false;
+    this.#dismissed = true;
     this.#root.style.display = 'none';
   }
 
   dispose(): void {
+    window.clearTimeout(this.#shieldTimer);
     this.#root.remove();
   }
 }

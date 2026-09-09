@@ -154,11 +154,37 @@ export function effectiveColor(state: MatchState, slot: PlayerSlot): CoinColor |
   return state.players[slot].color;
 }
 
-/** Coins banked by a seat's side — team total when partnered. */
+/**
+ * Coins banked by a seat's side — both partners together in team play.
+ *
+ * Summed from the players rather than read from `TeamState.coinsPocketed`,
+ * which is a cache and can only ever be as correct as its last writer. The win
+ * condition depends on this number: partners share nine coins, so reading one
+ * player's count meant a four-player team could pocket all nine between them
+ * and never be declared the winner.
+ */
 export function effectiveCoinsPocketed(state: MatchState, slot: PlayerSlot): number {
   const team = state.players[slot].team;
-  if (team !== null && state.teams) return state.teams[team].coinsPocketed;
-  return state.players[slot].coinsPocketed;
+  if (team === null || !state.teams) return state.players[slot].coinsPocketed;
+  return state.teams[team].players.reduce(
+    (total, member) => total + state.players[member].coinsPocketed,
+    0,
+  );
+}
+
+/**
+ * A seat on the side that owns the *other* colour.
+ *
+ * Where coins the shooter pocketed for their opponents are credited. In team
+ * play any member of the opposing team will do, since the total is a team one;
+ * `opponentOf` alone would have sent a four-player credit to Player One or Two
+ * regardless of who was actually playing.
+ */
+export function opposingSeatOf(state: MatchState, slot: PlayerSlot): PlayerSlot {
+  const team = state.players[slot].team;
+  if (team === null || !state.teams) return opponentOf(slot);
+  const opposing = team === TeamId.A ? TeamId.B : TeamId.A;
+  return state.teams[opposing].players[0] ?? opponentOf(slot);
 }
 
 export const opponentOf = (slot: PlayerSlot): PlayerSlot =>

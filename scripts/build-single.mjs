@@ -15,6 +15,7 @@
  */
 
 import { build } from 'vite';
+import { buildId } from './build-id.mjs';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -24,6 +25,11 @@ await build({
   configFile: false,
   root: process.cwd(),
   base: './',
+  // `configFile: false` skips vite.config.ts, so the stamp has to be supplied
+  // here too or this artifact would be the one that cannot identify itself.
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId()),
+  },
   build: {
     outDir: OUT_DIR,
     target: 'es2022',

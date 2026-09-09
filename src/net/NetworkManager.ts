@@ -20,6 +20,7 @@
  * same serializable struct the pointer and the AI already produce.
  */
 
+import { HAS_RELAY, ICE_SERVERS, type IceServer } from './NetConfig';
 import type { EventBus } from '../core/EventBus';
 import type { BoardPoint, PlayerSlot, ShotCommand } from '../core/types';
 
@@ -40,7 +41,35 @@ export type NetMessage =
       readonly pieces: readonly PieceSnapshot[];
       readonly currentPlayer: PlayerSlot;
     }
-  | { readonly type: 'rematch' };
+  | { readonly type: 'rematch' }
+  | { readonly type: 'ping' };
+
+/**
+ * How long to wait for the data channel before giving up on a join.
+ *
+ * A WebRTC connection that cannot be made usually fails *silently* — the offer
+ * goes out and no answer ever comes back. Without a deadline the guest sits on
+ * "Connecting to the other player…" indefinitely with nothing to act on, which
+ * is the worst possible way to report a failure.
+ */
+const JOIN_TIMEOUT_MS = 20_000;
+
+/**
+ * Liveness, because WebRTC on its own does not report a peer that simply
+ * vanishes.
+ *
+ * A closed tab, a phone put in a pocket, a train through a tunnel: none of
+ * these produce a `close` event on the data channel with any promptness — a
+ * host was still reporting a connected opponent half a minute after their tab
+ * had gone. The other player was then stuck watching a turn that could never
+ * arrive, with their own input locked because it was not theirs to take.
+ *
+ * The timeout is deliberately long. A backgrounded page has its timers
+ * throttled and its game loop stopped, so a peer quiet for this long is not
+ * merely slow — they cannot be playing.
+ */
+const PING_INTERVAL_MS = 4_000;
+const PEER_TIMEOUT_MS = 45_000;
 
 export type NetRole = 'host' | 'guest' | 'offline';
 
@@ -75,6 +104,8 @@ export class NetworkManager {
   #role: NetRole = 'offline';
   #status: NetStatus = 'idle';
   #roomId = '';
+  #heartbeat = 0;
+  #lastHeard = 0;
 
   /** Set by Game so incoming shots can be replayed through the turn machine. */
   onShot: ((by: PlayerSlot, shot: ShotCommand) => void) | undefined;
@@ -120,18 +151,81 @@ export class NetworkManager {
     return url.toString();
   }
 
-  /** Room id from the current URL, if this page was opened from a share link. */
+  /**
+   * Whether this page's address means anything on someone else's device.
+   *
+   * See `isShareableOrigin`, which holds the actual rule so it can be tested
+   * without a browser.
+   */
+  static get shareLinkReachable(): boolean {
+    try {
+      return isShareableOrigin(window.location.href);
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Room id from the current URL, if this page was opened from a share link.
+   *
+   * The hash is accepted as well as the query. A link passes through a lot of
+   * hands on its way to the other player — messaging apps, redirectors, a
+   * static host's own rewriting — and a query string is the part most likely
+   * to be dropped along the way. Reading both costs nothing and means one more
+   * route survives.
+   */
   static roomFromUrl(): string | null {
     try {
-      return new URL(window.location.href).searchParams.get('join');
+      const url = new URL(window.location.href);
+      const found = url.searchParams.get('join') ?? roomFromHash(url.hash);
+      return found ? NetworkManager.parseRoomCode(found) : null;
     } catch {
       return null;
     }
   }
 
+  /**
+   * Make sense of whatever the player pasted.
+   *
+   * A code reaches the other person by whatever route they had to hand, so it
+   * arrives as a bare code, as the full room id, or as an entire link pasted
+   * back out of a chat. All three mean the same thing, and refusing two of
+   * them would be pedantry at the exact moment the player is already having
+   * trouble.
+   */
+  static parseRoomCode(input: string): string | null {
+    const text = input.trim();
+    if (!text) return null;
+
+    let raw = text;
+    try {
+      const url = new URL(text);
+      raw = url.searchParams.get('join') ?? roomFromHash(url.hash) ?? text;
+    } catch {
+      // Not a URL; treat it as a code.
+    }
+
+    const code = raw.trim().toLowerCase().replace(/^carrom-/, '');
+    return /^[a-z0-9]{4,12}$/.test(code) ? `carrom-${code}` : null;
+  }
+
   #setStatus(status: NetStatus, detail?: string): void {
+    if (status === this.#status && status !== 'error') return;
     this.#status = status;
     this.onStatus?.(status, detail);
+  }
+
+  /**
+   * Report a failure, unless the session is already up.
+   *
+   * PeerJS surfaces broker chatter through the same `error` channel as a fatal
+   * setup failure — an unrelated peer going away, a signalling socket dropping
+   * after the WebRTC channel is established. Those are not the player's
+   * problem once the two devices are talking directly.
+   */
+  #reportError(detail: string): void {
+    if (this.#status === 'connected') return;
+    this.#setStatus('error', detail);
   }
 
   /**
@@ -146,6 +240,9 @@ export class NetworkManager {
     // paste, so a full UUID would be hostile.
     const peer = new Peer(id as string, {
       debug: 0,
+      // Supplied explicitly rather than left to the library's defaults, so
+      // adding a relay is an edit to one config file — see `NetConfig`.
+      config: { iceServers: ICE_SERVERS as IceServer[] },
     }) as unknown as PeerLike;
     return peer;
   }
@@ -183,7 +280,7 @@ export class NetworkManager {
       }) as never);
 
       peer.on('error', ((error: { type?: string; message?: string }) => {
-        this.#setStatus('error', error?.message ?? error?.type ?? 'connection failed');
+        this.#reportError(error?.message ?? error?.type ?? 'connection failed');
         reject(new Error(error?.message ?? 'peer error'));
       }) as never);
     });
@@ -200,12 +297,24 @@ export class NetworkManager {
     this.#peer = peer;
 
     return new Promise<void>((resolve, reject) => {
+      const deadline = window.setTimeout(() => {
+        if (this.#status === 'connected') return;
+        const message = HAS_RELAY
+          ? 'Could not reach the other player. Check the room is still open on ' +
+            'their device.'
+          : 'Could not reach the other player. Some mobile networks refuse a ' +
+            'direct connection — try both devices on the same Wi-Fi.';
+        this.#reportError(message);
+        reject(new Error(message));
+      }, JOIN_TIMEOUT_MS);
+
       peer.on('open', (() => {
         const connection = peer.connect(roomId, { reliable: true });
         this.#connection = connection;
         this.#bindConnection(connection);
 
         connection.on('open', (() => {
+          window.clearTimeout(deadline);
           this.#setStatus('connected');
           this.#send({ type: 'hello', name: 'Guest' });
           resolve();
@@ -217,7 +326,8 @@ export class NetworkManager {
           error?.type === 'peer-unavailable'
             ? 'That game is no longer open.'
             : (error?.message ?? 'connection failed');
-        this.#setStatus('error', message);
+        window.clearTimeout(deadline);
+        this.#reportError(message);
         reject(new Error(message));
       }) as never);
     });
@@ -226,12 +336,43 @@ export class NetworkManager {
   #bindConnection(connection: ConnectionLike): void {
     connection.on('data', ((raw: unknown) => this.#receive(raw)) as never);
     connection.on('close', (() => this.#setStatus('disconnected')) as never);
-    connection.on('error', (() => this.#setStatus('error', 'connection lost')) as never);
+    connection.on('error', (() => this.#reportError('connection lost')) as never);
+    connection.on('open', (() => this.#startHeartbeat()) as never);
+  }
+
+  /** Ping the peer, and notice when they stop answering. */
+  #startHeartbeat(): void {
+    this.#stopHeartbeat();
+    this.#lastHeard = Date.now();
+    this.#heartbeat = window.setInterval(() => {
+      /*
+       * Only judge the peer while this page is actually running. Hidden tabs
+       * have their timers throttled to roughly once a minute, so a check made
+       * from the background says more about this device than the other one.
+       */
+      if (document.hidden) {
+        this.#lastHeard = Date.now();
+        return;
+      }
+      if (Date.now() - this.#lastHeard > PEER_TIMEOUT_MS) {
+        this.#setStatus('disconnected');
+        return;
+      }
+      this.#send({ type: 'ping' });
+    }, PING_INTERVAL_MS);
+  }
+
+  #stopHeartbeat(): void {
+    if (this.#heartbeat) window.clearInterval(this.#heartbeat);
+    this.#heartbeat = 0;
   }
 
   #receive(raw: unknown): void {
     const message = raw as NetMessage;
     if (!message || typeof message !== 'object') return;
+
+    // Any traffic at all proves the peer is still there.
+    this.#lastHeard = Date.now();
 
     switch (message.type) {
       case 'shot':
@@ -249,6 +390,9 @@ export class NetworkManager {
         break;
       case 'welcome':
         this.#setStatus('connected');
+        break;
+      case 'ping':
+        // Nothing to do; receiving it was the point.
         break;
       default:
         break;
@@ -280,6 +424,7 @@ export class NetworkManager {
   }
 
   #teardown(): void {
+    this.#stopHeartbeat();
     this.#connection?.close();
     this.#connection = undefined;
     this.#peer?.destroy();
@@ -297,3 +442,53 @@ export class NetworkManager {
 
 /** Board point helper, kept here so callers need not import types twice. */
 export type { BoardPoint };
+
+/** `#join=xyz`, or a bare `#xyz`, as a room id. */
+function roomFromHash(hash: string): string | null {
+  const text = hash.replace(/^#/, '');
+  if (!text) return null;
+  const match = /(?:^|&)join=([^&]+)/.exec(text);
+  return match?.[1] ?? text;
+}
+
+/**
+ * Can a link to this address be opened by anyone but us?
+ *
+ * The share link is built from wherever the game happens to be loaded, and a
+ * great many of those places are private to one machine: a dev server on a LAN
+ * address, `localhost`, or a file opened straight off disk. The link is then
+ * perfectly well-formed and completely useless — the friend taps it, gets
+ * nothing, and the fault appears to lie with the game.
+ *
+ * Kept pure and given a URL rather than reading `window`, so the rule can be
+ * tested directly instead of inferred from a browser's behaviour.
+ */
+export function isShareableOrigin(href: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    // Unparseable is not evidence of anything; do not cry wolf.
+    return true;
+  }
+
+  if (url.protocol === 'file:') return false;
+
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) return false;
+  if (host === '127.0.0.1' || host === '::1') return false;
+  if (host.startsWith('127.')) return false;
+
+  // RFC 1918 and link-local: routable on this network, and nowhere else.
+  if (/^10\./.test(host)) return false;
+  if (/^192\.168\./.test(host)) return false;
+  if (/^169\.254\./.test(host)) return false;
+
+  const block = /^172\.(\d{1,3})\./.exec(host);
+  if (block) {
+    const second = Number(block[1]);
+    if (second >= 16 && second <= 31) return false;
+  }
+
+  return true;
+}

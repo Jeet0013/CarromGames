@@ -9,11 +9,18 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { createMatchState, type MatchState } from '../core/GameState';
+import {
+  assignColors,
+  assignTeams,
+  createMatchState,
+  effectiveCoinsPocketed,
+  type MatchState,
+} from '../core/GameState';
+import { FOUR_PLAYER_SEATING } from './FourPlayerRuleSet';
 import { RuleEngine, Notification } from './RuleEngine';
 import { ShotEvaluator, type PocketedPiece } from './ShotEvaluator';
 import { CLASSIC_CASUAL, CLASSIC_TOURNAMENT } from './RuleSet';
-import { CoinColor, FoulKind, PieceKind, PlayerSlot, QueenState } from '../core/types';
+import { CoinColor, FoulKind, GameMode, PieceKind, PlayerSlot, QueenState } from '../core/types';
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -324,6 +331,131 @@ describe('victory', () => {
     expect(decision.queenState).toBe(QueenState.PocketedPendingCover);
     expect(decision.winner).toBeNull();
     expect(state.winner).toBeNull();
+  });
+
+  /*
+   * A player's board can be cleared *by their opponent*: pocketing an
+   * opponent's coin is a foul, but the coin stays down and counts for its
+   * owner. Judging victory only for the shooter meant the match never ended —
+   * the side with nothing left on the board had nothing to aim at, so the
+   * computer sat thinking at a board it could not play.
+   */
+  it('declares the opponent the winner when their last coin is pocketed for them', () => {
+    const state = createMatchState();
+    state.players[PlayerSlot.One].color = CoinColor.White;
+    state.players[PlayerSlot.Two].color = CoinColor.Black;
+    state.players[PlayerSlot.Two].coinsPocketed = 8;
+    state.coinsOnBoard[CoinColor.Black] = 1;
+    state.queen = QueenState.Covered;
+
+    // Player One pots the last black. A foul for them, and the board is done.
+    const decision = play(state, engine(), [black()]);
+
+    expect(decision.fouls).toContain(FoulKind.OpponentCoinPocketed);
+    expect(decision.winner).toBe(PlayerSlot.Two);
+    expect(state.winner).toBe(PlayerSlot.Two);
+  });
+
+  it('credits the opponent short of nine without declaring a win', () => {
+    const state = createMatchState();
+    state.players[PlayerSlot.One].color = CoinColor.White;
+    state.players[PlayerSlot.Two].color = CoinColor.Black;
+    state.players[PlayerSlot.Two].coinsPocketed = 6;
+    state.coinsOnBoard[CoinColor.Black] = 3;
+    state.queen = QueenState.Covered;
+
+    const decision = play(state, engine(), [black()]);
+
+    expect(decision.winner).toBeNull();
+    expect(state.players[PlayerSlot.Two].coinsPocketed).toBe(7);
+  });
+
+  it('prefers the shooter when one shot completes both boards', () => {
+    const state = createMatchState();
+    state.players[PlayerSlot.One].color = CoinColor.White;
+    state.players[PlayerSlot.Two].color = CoinColor.Black;
+    state.players[PlayerSlot.One].coinsPocketed = 8;
+    state.players[PlayerSlot.Two].coinsPocketed = 8;
+    state.coinsOnBoard[CoinColor.White] = 1;
+    state.coinsOnBoard[CoinColor.Black] = 1;
+    state.queen = QueenState.Covered;
+
+    // The foul returns one of the shooter's coins, so their nine does not
+    // stand and the completed board is the opponent's.
+    const decision = play(state, engine(), [white(), black()]);
+    expect(decision.winner).toBe(PlayerSlot.Two);
+  });
+
+  it('does not let a cover the winner can never pay block their win', () => {
+    const state = createMatchState();
+    state.players[PlayerSlot.One].color = CoinColor.White;
+    state.players[PlayerSlot.Two].color = CoinColor.Black;
+    state.players[PlayerSlot.Two].coinsPocketed = 8;
+    state.coinsOnBoard[CoinColor.Black] = 1;
+    // Player Two took the Queen and still owes a cover — but Player One is
+    // about to pocket their last coin *for* them. With no black left on the
+    // board Two can never cover, so blocking here would deadlock the match:
+    // neither side would have a move that could ever end it.
+    state.queen = QueenState.PocketedPendingCover;
+    state.queenPocketedBy = PlayerSlot.Two;
+
+    expect(play(state, engine(), [black()]).winner).toBe(PlayerSlot.Two);
+  });
+
+  it('lets the Queen come back when the shooter fails their own cover', () => {
+    const state = createMatchState();
+    state.players[PlayerSlot.One].color = CoinColor.White;
+    state.players[PlayerSlot.Two].color = CoinColor.Black;
+    state.players[PlayerSlot.Two].coinsPocketed = 8;
+    state.coinsOnBoard[CoinColor.Black] = 1;
+    state.queen = QueenState.PocketedPendingCover;
+    state.queenPocketedBy = PlayerSlot.One;
+
+    // A black coin does not cover for Player One, so the Queen returns to the
+    // centre — the obligation is discharged, and Two's completed board stands.
+    const decision = play(state, engine(), [black()]);
+    expect(decision.returnQueenToCentre).toBe(true);
+    expect(decision.winner).toBe(PlayerSlot.Two);
+  });
+
+  /*
+   * Partners share nine coins, so a team's progress is the sum of both seats.
+   * Reading one player's count meant a four-player team could pocket all nine
+   * between them and never be declared the winner.
+   */
+  it('wins a team match on the partners\' combined ninth coin', () => {
+    const state = createMatchState(GameMode.FourPlayer);
+    state.seatOrder = [
+      PlayerSlot.One,
+      PlayerSlot.Two,
+      PlayerSlot.Three,
+      PlayerSlot.Four,
+    ];
+    assignTeams(state, FOUR_PLAYER_SEATING);
+    assignColors(state, PlayerSlot.One, CoinColor.White);
+    state.queen = QueenState.Covered;
+
+    // Five from one partner, three from the other: eight between them.
+    state.players[PlayerSlot.One].coinsPocketed = 5;
+    state.players[PlayerSlot.Three].coinsPocketed = 3;
+    state.coinsOnBoard[CoinColor.White] = 1;
+
+    const decision = play(state, engine(), [white()], { by: PlayerSlot.Three });
+    expect(decision.winner).toBe(PlayerSlot.Three);
+  });
+
+  it('credits a coin pocketed for the other team to that team', () => {
+    const state = createMatchState(GameMode.FourPlayer);
+    assignTeams(state, FOUR_PLAYER_SEATING);
+    assignColors(state, PlayerSlot.One, CoinColor.White);
+    state.queen = QueenState.Covered;
+
+    // Player Two is on the opposing team; a black coin they own goes down on
+    // Player Three's shot, and must land on *their* side of the scoreboard.
+    play(state, engine(), [black()], { by: PlayerSlot.Three });
+
+    expect(effectiveCoinsPocketed(state, PlayerSlot.Two)).toBe(1);
+    expect(effectiveCoinsPocketed(state, PlayerSlot.Three)).toBe(0);
   });
 
   it('stops switching players once the match is won', () => {
