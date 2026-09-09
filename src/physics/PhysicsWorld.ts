@@ -53,6 +53,25 @@ export interface PieceBodyOptions {
   readonly ccd?: boolean;
 }
 
+/**
+ * How slick a powdered board is, and for how long.
+ *
+ * `STRENGTH` is the friction multiplier at full effect: 0.40 means the board
+ * keeps 40% of its friction, so it is 60% slicker than bare. It was 0.55, and
+ * at that value a rebound rarely had enough left to cross the board a second
+ * time — the bank shot behind the striker line was luck rather than a play.
+ *
+ * The figure was also written twice: once as this default and once as a
+ * literal inside the decay, which interpolates back toward a bare board. They
+ * agreed, so nothing was wrong — but changing one would have powdered the
+ * board at one strength and decayed it toward another, and the symptom would
+ * have been a board that mysteriously got slicker as the powder wore off.
+ */
+const POWDER = {
+  STRENGTH: 0.4,
+  SECONDS: 40,
+} as const;
+
 export class PhysicsWorld {
   readonly #world: RAPIER.World;
   readonly #queue: RAPIER.EventQueue;
@@ -231,10 +250,10 @@ export class PhysicsWorld {
   /**
    * Scatter powder on the board.
    *
-   * @param strength  friction multiplier at full effect (0.55 ≈ 45% slicker)
+   * @param strength  friction multiplier at full effect; see `POWDER`
    * @param seconds   how long it lasts before the board is bare again
    */
-  applyPowder(strength = 0.55, seconds = 40): void {
+  applyPowder(strength = POWDER.STRENGTH, seconds = POWDER.SECONDS): void {
     this.#powderDuration = seconds;
     this.#powderRemaining = seconds;
     this.#frictionScale = strength;
@@ -299,7 +318,7 @@ export class PhysicsWorld {
     const level = this.#powderRemaining / this.#powderDuration;
     const eased = level * level * (3 - 2 * level);
     // Interpolate from bare board (1) toward the powdered value.
-    this.#frictionScale = 1 - (1 - 0.55) * eased;
+    this.#frictionScale = 1 - (1 - POWDER.STRENGTH) * eased;
   }
 
   #applySurfaceFriction(delta: number): void {
