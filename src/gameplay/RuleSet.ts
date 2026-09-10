@@ -102,3 +102,12 @@ export const RULESETS: Record<string, RuleSet> = {
   [CLASSIC_CASUAL.id]: CLASSIC_CASUAL,
   [CLASSIC_TOURNAMENT.id]: CLASSIC_TOURNAMENT,
 };
+
+/**
+ * Coins of each colour in a standard set.
+ *
+ * Lived as a private constant inside `PlayerPanel`, which is a UI component
+ * printing a number the rules own. The victory scoreboard needed the same
+ * figure, and two copies of a rule is how they drift.
+ */
+export const COINS_PER_PLAYER = 9;

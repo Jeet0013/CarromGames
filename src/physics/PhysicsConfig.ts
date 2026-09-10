@@ -113,8 +113,17 @@ export const PHYSICS_CONFIG = {
   /**
    * Hard ceiling on a single shot's simulation. If the board somehow never
    * settles, the turn still ends instead of hanging the state machine.
+   *
+   * 16s, up from 12. Powder now leaves the board 78% slicker, and at that
+   * friction a striker at MAX_VELOCITY that never touches a rail takes a full
+   * 12s to stop on its own — exactly the old ceiling. A shot that takes
+   * precisely as long as the machine is willing to wait is a shot that gets
+   * cut off, so the ceiling moved with it.
+   *
+   * This is not free: it is also how long a genuinely stuck board hangs before
+   * the game recovers. Both numbers move together or neither should.
    */
-  MAX_SETTLE_SECONDS: 12,
+  MAX_SETTLE_SECONDS: 16,
 
   // ── Velocity limits ─────────────────────────────────────────────────────
   /**

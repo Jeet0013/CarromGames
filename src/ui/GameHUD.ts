@@ -7,6 +7,7 @@
  */
 
 import type { EventBus } from '../core/EventBus';
+import { QueenState } from '../core/types';
 import type { MatchState } from '../core/GameState';
 import { PlayerSide } from '../core/PlayerSide';
 import { PlayerPanel } from './PlayerPanel';
@@ -41,6 +42,17 @@ export class GameHUD {
   readonly #container: HTMLElement;
   readonly #unsubscribes: Array<() => void> = [];
   #seats: readonly SeatConfig[] = [];
+  #narrow = false;
+  /**
+   * Show only the active seat's panel.
+   *
+   * With four players, only one is ever playing, so four simultaneous panels
+   * are three pieces of furniture competing with the board for a phone screen.
+   * Showing just the player whose turn it is frees the whole layout — and with
+   * the board rotated to face them, the single panel belongs at the bottom
+   * where that player is sitting.
+   */
+  #activeOnly = false;
 
   constructor(container: HTMLElement, events: EventBus) {
     this.#container = container;
@@ -61,8 +73,27 @@ export class GameHUD {
     for (const panel of this.#panels.values()) panel.dispose();
     this.#panels.clear();
     this.#seats = seats;
+    this.#narrow = window.innerWidth < 560;
 
-    for (const seat of seats) {
+    /*
+     * Four players on a phone cannot use their own edges.
+     *
+     * In portrait the board fills ~92% of the width, so a panel pinned to the
+     * left or right edge at mid-height lands on the playfield. The bands above
+     * and below the board are free, so all four move there as compact chips —
+     * two on top, two below — with the pairing kept as close to the seating as
+     * the space allows.
+     */
+    this.#activeOnly = seats.length > 2;
+
+    // One panel, bottom-left, because the board is turned so the active player
+    // is sitting there.
+    const soloAnchor = [
+      'bottom:max(64px, calc(env(safe-area-inset-bottom) + 58px))',
+      'left:max(14px, env(safe-area-inset-left))',
+    ];
+
+    seats.forEach((seat) => {
       this.#panels.set(
         seat.slot,
         new PlayerPanel(this.#container, {
@@ -70,9 +101,55 @@ export class GameHUD {
           initials: seat.initials,
           side: seat.side,
           accent: seat.accent,
+          ...(this.#activeOnly ? { anchor: soloAnchor } : {}),
         }),
       );
+    });
+  }
+
+  /**
+   * Place each panel just outside the board's own edges.
+   *
+   * `top` and `bottom` are the board's projected screen bounds. Panels sit a
+   * fixed gap outside them, clamped so they stay on screen when the board fills
+   * the viewport. The active player's panel goes below the board — that player
+   * is sitting at the near edge, and their own information belongs on their
+   * side of it.
+   */
+  layoutAroundBoard(top: number, bottom: number, viewportHeight: number): void {
+    // Room to breathe. At 12px the labels read as stuck to the rails; the
+    // board is a physical object and wants a margin around it.
+    const GAP = 26;
+    const PANEL = 56;
+    // Never above the corner controls, never under the power meter.
+    const above = Math.min(
+      Math.max(GAP, viewportHeight - top + GAP),
+      viewportHeight - PANEL - GAP,
+    );
+    const below = Math.min(Math.max(GAP, bottom + GAP), viewportHeight - PANEL - GAP);
+
+    for (const seat of this.#seats) {
+      const panel = this.#panels.get(seat.slot);
+      if (!panel) continue;
+      // With one panel showing it is always the near player's, so always below.
+      if (this.#activeOnly) panel.setEdge('below', below);
+      else if (seat.side === PlayerSide.Top) panel.setEdge('above', above);
+      else panel.setEdge('below', below);
     }
+  }
+
+  /**
+   * Re-lay the panels if the viewport crosses the narrow threshold.
+   *
+   * Rotating a phone with four players changes which layout is viable, and a
+   * stale layout would leave chips on the board.
+   */
+  handleResize(): void {
+    const narrow = window.innerWidth < 560;
+    if (narrow === this.#narrow) return;
+    const seats = this.#seats;
+    this.setSeats(seats);
+    if (this.#syncTarget) this.sync(this.#syncTarget);
   }
 
   get seats(): readonly SeatConfig[] {
@@ -88,11 +165,18 @@ export class GameHUD {
   sync(match: MatchState): void {
     for (const seat of this.#seats) {
       const player = match.players[seat.slot];
+      const isActive = match.currentPlayer === seat.slot;
+      // Everyone but the player on turn is hidden entirely.
+      if (this.#activeOnly) this.#panels.get(seat.slot)?.setVisible(isActive);
       this.#panels.get(seat.slot)?.update({
         score: player.coinsPocketed,
         coinsPocketed: player.coinsPocketed,
         color: player.color,
         active: match.currentPlayer === seat.slot && match.winner === null,
+        // The Queen counts for whoever pocketed her, but only once covered —
+        // until then she is still in play and belongs to nobody.
+        hasQueen:
+          match.queen === QueenState.Covered && match.queenPocketedBy === seat.slot,
       });
     }
   }

@@ -1,16 +1,30 @@
 /**
  * Difficulty selection, shown after choosing Play vs Computer.
  *
- * Reuses the menu's card language exactly — same lacquer, same accent rail,
- * same type scale — so it reads as the next step of one flow rather than a
- * different screen. The only addition is a four-star strength indicator, which
- * conveys relative difficulty faster than the descriptions do.
+ * Built from the same furniture as the menu — same plate, same rows, same
+ * brass rules, same mark at the top — so it reads as the next step of one
+ * flow rather than a different screen. It previously *claimed* to reuse the
+ * menu's language while both screens were drifting: four more accent colours
+ * (green, orange, blue, purple) on top of the menu's five, and a star glyph
+ * whose shape was whichever font happened to render it.
+ *
+ * Strength is four stars filled in the one accent. Stars because that is what
+ * a difficulty scale looks like; drawn rather than typed as ★ because a
+ * glyph's shape and weight belong to whichever font renders it, and this ships
+ * to platforms that disagree.
  */
 
 import { AIDifficulty, DIFFICULTY_INFO, DIFFICULTY_ORDER } from '../ai/AIDifficulty';
+import { ScreenGate } from './ScreenGate';
+import { brandMark, injectScreenSheet, injectSheet, starMark } from './theme';
+
+/** How many stars a level shows. Four, so the scale reads at a glance. */
+const STAR_COUNT = 4;
 
 export class DifficultySelect {
   readonly #root: HTMLElement;
+  /** Ignores the click left behind by the tap that opened this screen. */
+  readonly #gate = new ScreenGate();
   #visible = false;
 
   constructor(
@@ -18,172 +32,94 @@ export class DifficultySelect {
     onSelect: (difficulty: AIDifficulty) => void,
     onBack: () => void,
   ) {
+    injectScreenSheet();
+    injectSheet('difficulty', DIFFICULTY_CSS);
+
     this.#root = document.createElement('div');
-    this.#root.style.cssText = [
-      'position:absolute',
-      'inset:0',
-      'display:none',
-      'flex-direction:column',
-      'background:radial-gradient(ellipse at 50% 42%, rgba(28,23,18,0.86), rgba(10,9,8,0.96) 72%)',
-      'backdrop-filter:blur(3px)',
-      'z-index:62',
-    ].join(';');
+    this.#root.className = 'cx-screen';
 
-    const scroll = document.createElement('div');
-    scroll.style.cssText = [
-      'flex:1 1 auto',
-      'min-height:0',
-      'overflow-y:auto',
-      '-webkit-overflow-scrolling:touch',
-      'overscroll-behavior:contain',
-      'display:flex',
-      'flex-direction:column',
-      'align-items:center',
-      'justify-content:center',
-      'gap:clamp(14px, 2.5vh, 24px)',
-      'padding:max(20px, env(safe-area-inset-top)) 20px 96px',
-    ].join(';');
+    const panel = document.createElement('div');
+    panel.className = 'cx-screen-panel cx-plate';
 
-    const title = document.createElement('h2');
-    title.textContent = 'Select difficulty';
-    title.style.cssText = [
-      'margin:0',
-      'font:600 clamp(22px, 5.5vw, 32px)/1.1 system-ui, -apple-system, sans-serif',
-      'background:linear-gradient(180deg, #f7e7cf, #b07a45)',
-      '-webkit-background-clip:text',
-      'background-clip:text',
-      'color:transparent',
-    ].join(';');
+    const head = document.createElement('header');
+    head.className = 'cx-screen-head';
 
-    const grid = document.createElement('div');
-    grid.style.cssText = [
-      'display:grid',
-      'grid-template-columns:repeat(auto-fit, minmax(min(240px, 100%), 1fr))',
-      'gap:11px',
-      'width:min(560px, 100%)',
-    ].join(';');
+    // Smaller than the menu's: this is a step inside the flow, not its front
+    // door, and the mark at full size twice running reads as a loop.
+    head.append(brandMark('sm'));
 
+    const eyebrow = document.createElement('h2');
+    eyebrow.className = 'cx-eyebrow';
+    eyebrow.textContent = 'Select difficulty';
+
+    const rule = document.createElement('hr');
+    rule.className = 'cx-rule cx-difficulty-rule';
+
+    head.append(eyebrow, rule);
+
+    const list = document.createElement('ul');
+    list.className = 'cx-list';
     for (const difficulty of DIFFICULTY_ORDER) {
-      grid.append(this.#buildCard(difficulty, onSelect));
+      const item = document.createElement('li');
+      item.append(this.#buildRow(difficulty, onSelect));
+      list.append(item);
     }
 
     const back = document.createElement('button');
     back.type = 'button';
+    back.className = 'cx-back cx-focus';
     back.textContent = '← Back';
-    back.style.cssText = [
-      'padding:14px 24px',
-      'border-radius:999px',
-      'border:1px solid rgba(176,122,69,0.35)',
-      'background:transparent',
-      'color:#9a8d7d',
-      'font:600 13px/1 system-ui, -apple-system, sans-serif',
-      'letter-spacing:0.06em',
-      'cursor:pointer',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
     back.addEventListener('click', (event) => {
       event.stopPropagation();
+      if (this.#gate.blocked(event)) return;
       onBack();
     });
 
-    scroll.append(title, grid);
-
-    const footer = document.createElement('div');
-    footer.style.cssText = [
-      'position:absolute',
-      'left:0',
-      'right:0',
-      'bottom:0',
-      'display:flex',
-      'justify-content:center',
-      'padding:14px 18px max(16px, env(safe-area-inset-bottom))',
-      'background:linear-gradient(to top, rgba(10,9,8,0.95) 55%, rgba(10,9,8,0))',
-      'pointer-events:none',
-    ].join(';');
-    back.style.pointerEvents = 'auto';
-    footer.append(back);
-
-    this.#root.append(scroll, footer);
+    panel.append(head, list, back);
+    this.#root.append(panel);
     container.append(this.#root);
   }
 
-  #buildCard(
+  #buildRow(
     difficulty: AIDifficulty,
-    onSelect: (d: AIDifficulty) => void,
+    onSelect: (difficulty: AIDifficulty) => void,
   ): HTMLElement {
     const info = DIFFICULTY_INFO[difficulty];
 
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.style.cssText = [
-      'position:relative',
-      'display:flex',
-      'flex-direction:column',
-      'align-items:flex-start',
-      'gap:5px',
-      'padding:16px 16px',
-      'border-radius:14px',
-      'border:1px solid rgba(176,122,69,0.3)',
-      'background:linear-gradient(165deg, rgba(34,28,22,0.95), rgba(19,16,13,0.95))',
-      'color:#f4ece1',
-      'text-align:left',
-      'cursor:pointer',
-      'transition:transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'cx-row cx-focus';
 
-    const rail = document.createElement('span');
-    rail.style.cssText = [
-      'position:absolute',
-      'left:0',
-      'top:13px',
-      'bottom:13px',
-      'width:3px',
-      'border-radius:0 3px 3px 0',
-      `background:${info.accent}`,
-    ].join(';');
-
-    const row = document.createElement('span');
-    row.style.cssText = 'display:flex;align-items:center;gap:9px;width:100%';
+    const text = document.createElement('span');
+    text.className = 'cx-row-text';
 
     const name = document.createElement('span');
+    name.className = 'cx-row-name';
     name.textContent = info.label;
-    name.style.cssText =
-      'font:600 18px/1.2 system-ui, -apple-system, sans-serif;letter-spacing:0.01em';
-
-    const stars = document.createElement('span');
-    // Filled versus hollow, not a count — the shape carries the comparison.
-    stars.textContent = '★'.repeat(info.stars) + '☆'.repeat(4 - info.stars);
-    stars.style.cssText = `margin-left:auto;font-size:13px;letter-spacing:0.12em;color:${info.accent}`;
-    stars.setAttribute('aria-label', `${info.stars} of 4`);
-
-    row.append(name, stars);
 
     const blurb = document.createElement('span');
+    blurb.className = 'cx-row-blurb';
     blurb.textContent = info.description;
-    blurb.style.cssText =
-      'font:400 13px/1.45 system-ui, -apple-system, sans-serif;color:#9a8d7d';
 
-    card.append(rail, row, blurb);
+    text.append(name, blurb);
 
-    card.addEventListener('pointerenter', () => {
-      card.style.borderColor = info.accent;
-      card.style.transform = 'translateY(-2px)';
-      card.style.boxShadow = `0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px ${info.accent}44`;
-    });
-    const rest = (): void => {
-      card.style.borderColor = 'rgba(176,122,69,0.3)';
-      card.style.transform = 'none';
-      card.style.boxShadow = 'none';
-    };
-    card.addEventListener('pointerleave', rest);
-    card.addEventListener('click', (event) => {
+    const stars = document.createElement('span');
+    stars.className = 'cx-stars';
+    // The stars are a picture of the number; the number itself goes to anyone
+    // who cannot see them.
+    stars.setAttribute('role', 'img');
+    stars.setAttribute('aria-label', `Strength ${info.stars} of ${STAR_COUNT}`);
+    for (let i = 0; i < STAR_COUNT; i += 1) stars.append(starMark(i < info.stars));
+
+    row.append(text, stars);
+
+    row.addEventListener('click', (event) => {
       event.stopPropagation();
-      rest();
+      if (this.#gate.blocked(event)) return;
       onSelect(difficulty);
     });
 
-    return card;
+    return row;
   }
 
   get visible(): boolean {
@@ -192,6 +128,7 @@ export class DifficultySelect {
 
   show(): void {
     this.#visible = true;
+    this.#gate.open();
     this.#root.style.display = 'flex';
   }
 
@@ -204,3 +141,12 @@ export class DifficultySelect {
     this.#root.remove();
   }
 }
+
+const DIFFICULTY_CSS = `
+.cx-difficulty-rule { width: 100%; }
+
+/* No mark on these rows, so the text starts where the menu's text starts. */
+.cx-screen-panel .cx-list .cx-row > .cx-row-text:first-child {
+  padding-left: 2px;
+}
+`;

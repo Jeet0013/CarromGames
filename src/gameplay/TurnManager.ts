@@ -37,6 +37,7 @@ import { RuleEngine, Notification, type RuleDecision } from './RuleEngine';
 import { CLASSIC_CASUAL, type RuleSet } from './RuleSet';
 import { ShotEvaluator } from './ShotEvaluator';
 import {
+  FoulKind,
   GameMode,
   INTERACTIVE_TURN_STATES,
   PieceKind,
@@ -266,13 +267,13 @@ export class TurnManager {
     // Commit to state only after the board changes it implies are done.
     this.#engine.apply(this.#match, outcome, decision);
 
-    this.#announce(decision);
+    this.#announce(decision, shooter);
 
     this.#transition(TurnState.TurnComplete);
 
     if (decision.winner !== null) {
       this.#transition(TurnState.GameComplete);
-      this.#events.emit('rules:gameComplete', { winner: decision.winner });
+      this.#events.emit('rules:gameComplete', { winner: decision.winner, by: shooter });
       return;
     }
 
@@ -283,10 +284,16 @@ export class TurnManager {
 
     this.#resetStrikerForTurn();
     this.#transition(TurnState.StrikerPositioning);
+
+    // Only now is the board final and the next player known.
+    this.#events.emit('shot:resolved', {
+      by: shooter,
+      nextPlayer: this.#match.currentPlayer,
+    });
   }
 
   /** Emit notifications and keep the standing-obligation banner honest. */
-  #announce(decision: RuleDecision): void {
+  #announce(decision: RuleDecision, shooter: PlayerSlot): void {
     for (const message of decision.notifications) {
       // COVER THE QUEEN is a standing obligation, not an event; it is pinned
       // separately rather than fading after a couple of seconds.
@@ -297,7 +304,12 @@ export class TurnManager {
           : message === Notification.KeepPlaying || message === Notification.QueenCovered
             ? 'good'
             : 'neutral';
-      this.#events.emit('ui:notify', { message, tone });
+      // A bare "FOUL" leaves the player guessing at what they did wrong —
+      // which was the complaint about potting an opponent's coin, the one
+      // foul whose cause is least obvious. Name it.
+      const text =
+        message === Notification.Foul ? foulMessage(decision.fouls) : message;
+      this.#events.emit('ui:notify', { message: text, tone });
     }
 
     this.#events.emit('queen:banner', {
@@ -311,8 +323,10 @@ export class TurnManager {
     if (decision.ownershipAssigned) {
       this.#events.emit('rules:ownershipAssigned', decision.ownershipAssigned);
     }
+    // The shooter, not `currentPlayer` — by this point the turn has already
+    // been handed on, so reading it live blamed the wrong seat.
     for (const foul of decision.fouls) {
-      this.#events.emit('rules:foul', { player: decision.winner ?? this.currentPlayer, kind: foul });
+      this.#events.emit('rules:foul', { player: shooter, kind: foul });
     }
     if (decision.queenTransition) {
       this.#events.emit('queen:stateChanged', decision.queenTransition);
@@ -373,6 +387,36 @@ export class TurnManager {
     void PIECE_GEOMETRY;
   }
 
+  /**
+   * Replay a shot that arrived from another device.
+   *
+   * Forces the machine into positioning first. A remote shot can land while
+   * this device is in any state — mid-settle, mid-aim — and `beginShot` quite
+   * correctly refuses from there. Without this the shot was simply dropped:
+   * the boards diverged, the turn never advanced, and the other player could
+   * never move again. That is a network concern, not a rule being bent; the
+   * shot itself still goes through `executeShot` like every other.
+   */
+  acceptRemoteShot(shot: ShotCommand): boolean {
+    this.#state = TurnState.StrikerPositioning;
+    if (!this.beginAiming()) return false;
+    return this.executeShot(shot);
+  }
+
+  /**
+   * Adopt the host's view of whose turn it is.
+   *
+   * Both devices resolve the same shot locally, and a difference of one rule
+   * evaluation would leave them disagreeing about who plays next — with each
+   * waiting for the other. The host's answer wins.
+   */
+  adoptTurn(slot: PlayerSlot): void {
+    this.#match.currentPlayer = slot;
+    this.#state = TurnState.StrikerPositioning;
+    this.#resetStrikerForTurn();
+    this.#events.emit('turn:playerSwitched', { to: slot });
+  }
+
   /** Hand the turn over explicitly. Follows `seatOrder`, so 2P and 4P both work. */
   switchPlayer(): void {
     this.#match.currentPlayer = nextSeat(this.#match, this.#match.currentPlayer);
@@ -390,4 +434,26 @@ export class TurnManager {
     this.#state = to;
     this.#events.emit('turn:changed', { from, to });
   }
+}
+
+/**
+ * A foul message that says what happened.
+ *
+ * Several fouls can land on one shot — a striker that pots itself and takes an
+ * opponent's coin with it — so the most consequential one is named and the
+ * rest are counted, rather than stacking four toasts on top of each other.
+ */
+const FOUL_LABELS: Record<FoulKind, string> = {
+  [FoulKind.StrikerPocketed]: 'FOUL · STRIKER POCKETED',
+  [FoulKind.OpponentCoinPocketed]: "FOUL · OPPONENT'S COIN",
+  [FoulKind.NoContact]: 'FOUL · NO CONTACT',
+  [FoulKind.IllegalStrikerPlacement]: 'FOUL · ILLEGAL PLACEMENT',
+  [FoulKind.LastCoinBeforeQueen]: 'FOUL · QUEEN STILL UP',
+};
+
+function foulMessage(fouls: readonly FoulKind[]): string {
+  const first = fouls[0];
+  if (first === undefined) return Notification.Foul;
+  const label = FOUL_LABELS[first];
+  return fouls.length > 1 ? `${label} +${fouls.length - 1}` : label;
 }

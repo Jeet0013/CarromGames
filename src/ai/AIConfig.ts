@@ -31,6 +31,15 @@ export interface AIConfig {
   readonly targetSelectionSkill: number;
   /** Search width. A weak AI genuinely considers fewer options. */
   readonly maxShotCandidates: number;
+  /**
+   * How many top candidates to actually play out before choosing.
+   *
+   * Zero means the tier never looks ahead and commits to whatever its geometry
+   * liked — which is what makes a weak AI weak in a way that feels human: it
+   * misses because it did not foresee the consequence, not because its hands
+   * shook.
+   */
+  readonly simulatedCandidates: number;
 }
 
 export const AI_CONFIGS: Record<AIDifficulty, AIConfig> = {
@@ -47,6 +56,7 @@ export const AI_CONFIGS: Record<AIDifficulty, AIConfig> = {
     trajectoryPredictionSkill: 0.35,
     targetSelectionSkill: 0.4,
     maxShotCandidates: 10,
+    simulatedCandidates: 0,
   },
   [AIDifficulty.Normal]: {
     accuracy: 0.8,
@@ -61,6 +71,7 @@ export const AI_CONFIGS: Record<AIDifficulty, AIConfig> = {
     trajectoryPredictionSkill: 0.6,
     targetSelectionSkill: 0.68,
     maxShotCandidates: 24,
+    simulatedCandidates: 0,
   },
   [AIDifficulty.Hard]: {
     accuracy: 0.9,
@@ -75,6 +86,7 @@ export const AI_CONFIGS: Record<AIDifficulty, AIConfig> = {
     trajectoryPredictionSkill: 0.8,
     targetSelectionSkill: 0.85,
     maxShotCandidates: 48,
+    simulatedCandidates: 6,
   },
   [AIDifficulty.Expert]: {
     // Deliberately short of perfect. A flawless opponent is not a hard
@@ -92,6 +104,7 @@ export const AI_CONFIGS: Record<AIDifficulty, AIConfig> = {
     trajectoryPredictionSkill: 0.93,
     targetSelectionSkill: 0.94,
     maxShotCandidates: 80,
+    simulatedCandidates: 14,
   },
 };
 

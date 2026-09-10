@@ -5,6 +5,8 @@
  * tutorial a player skipped by accident and one they can never see again.
  */
 
+import { injectBaseSheet } from './theme';
+
 export class HelpButton {
   readonly #button: HTMLButtonElement;
 
@@ -13,23 +15,15 @@ export class HelpButton {
     this.#button.type = 'button';
     this.#button.textContent = '?';
     this.#button.setAttribute('aria-label', 'How to play');
+    injectBaseSheet();
+    this.#button.className = 'cx-icon-btn cx-focus';
     this.#button.style.cssText = [
       'position:absolute',
       'top:max(14px, env(safe-area-inset-top))',
       // Left of the sound toggle, which owns the corner itself.
       'right:calc(max(14px, env(safe-area-inset-right)) + 54px)',
-      'width:46px',
-      'height:46px',
-      'border-radius:50%',
-      'border:1px solid rgba(176,122,69,0.45)',
-      'background:rgba(18,16,14,0.8)',
-      'color:#f4ece1',
       'font:600 18px/1 system-ui, -apple-system, sans-serif',
-      'cursor:pointer',
-      'display:grid',
-      'place-items:center',
       'z-index:40',
-      '-webkit-tap-highlight-color:transparent',
     ].join(';');
 
     this.#button.addEventListener('click', (event) => {
@@ -38,6 +32,11 @@ export class HelpButton {
       onClick();
     });
     container.append(this.#button);
+  }
+
+  /** Hidden while a full-screen overlay is up, so it cannot sit over a menu. */
+  setVisible(visible: boolean): void {
+    this.#button.style.display = visible ? 'grid' : 'none';
   }
 
   dispose(): void {

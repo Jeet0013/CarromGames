@@ -30,23 +30,38 @@ import { AIDifficulty } from './AIDifficulty';
 import { AIShotExecutor } from './AIShotExecutor';
 import { AIShotPlanner } from './AIShotPlanner';
 import { AIShotScorer } from './AIShotScorer';
+import { AIShotSimulator, type SimPiece } from './AIShotSimulator';
 import { AITargetAnalyzer } from './AITargetAnalyzer';
 import { AIQueenStrategy } from './AIQueenStrategy';
 import { AIThinkingState } from './AIThinkingState';
 import type { AIShotCandidate } from './AIShotCandidate';
 import { IS_DEV } from '../config/GameConfig';
-import { TurnState, type BoardPoint, type PlayerSlot } from '../core/types';
+import { TurnState, type BoardPoint, type CoinColor, type PlayerSlot } from '../core/types';
 
 /** How long the aim guides are shown before the shot, in seconds. */
 const AIM_DISPLAY_SECONDS = 0.45;
 /** Time to slide the striker into place before aiming. */
 const PLACEMENT_SECONDS = 0.3;
+/** Pause before retrying a turn that failed to produce a shot. */
+const RETRY_SECONDS = 0.6;
+/** Attempts before the AI gives its turn up rather than retrying forever. */
+const MAX_ATTEMPTS = 3;
+/**
+ * Longest the AI may hold a turn before the watchdog takes it away.
+ *
+ * Human input is locked for the whole of the computer's turn, so an AI that
+ * cannot act does not merely play badly — it freezes the game with nothing on
+ * screen but "COMPUTER IS THINKING…". Generous enough that no legitimate turn
+ * (think, place, aim, shoot, settle) comes close.
+ */
+const TURN_WATCHDOG_SECONDS = 20;
 
 export class AIPlayer {
   readonly #events: EventBus;
   readonly #pieces: PieceFactory;
   readonly #turns: TurnManager;
   readonly #executor: AIShotExecutor;
+  readonly #simulator = new AIShotSimulator();
 
   #slot: PlayerSlot | null = null;
   #difficulty: AIDifficulty = AIDifficulty.Normal;
@@ -57,6 +72,10 @@ export class AIPlayer {
   #candidate: AIShotCandidate | null = null;
   #origin: BoardPoint = { x: 0, z: 0 };
   #announcedThinking = false;
+  /** Failed attempts at this turn, reset once a shot actually goes. */
+  #attempts = 0;
+  /** Seconds the AI has held the current turn. */
+  #turnElapsed = 0;
 
   constructor(
     events: EventBus,
@@ -97,11 +116,17 @@ export class AIPlayer {
     this.reset();
   }
 
+  dispose(): void {
+    this.#simulator.dispose();
+  }
+
   reset(): void {
     this.#state = AIThinkingState.Idle;
     this.#timer = 0;
     this.#candidate = null;
     this.#announcedThinking = false;
+    this.#attempts = 0;
+    this.#turnElapsed = 0;
     this.#executor.hideAim();
   }
 
@@ -118,9 +143,21 @@ export class AIPlayer {
       return;
     }
 
+    // A finished match belongs to the victory screen, not to the AI.
+    if (this.#turns.match.winner !== null) {
+      if (this.#state !== AIThinkingState.Idle) this.reset();
+      return;
+    }
+
     // The AI may only act when the board is genuinely idle and the turn machine
     // is accepting input — the same gate a human passes.
     const ready = this.#turns.state === TurnState.StrikerPositioning;
+
+    this.#turnElapsed += delta;
+    if (this.#turnElapsed > TURN_WATCHDOG_SECONDS) {
+      this.#abandonTurn('COMPUTER PASSES');
+      return;
+    }
 
     switch (this.#state) {
       case AIThinkingState.Idle:
@@ -148,9 +185,52 @@ export class AIPlayer {
         if (ready) this.reset();
         break;
 
+      case AIThinkingState.Error:
+        /*
+         * Recoverable, because sitting here is not.
+         *
+         * Human input is locked for the whole of the computer's turn, so an
+         * AI parked in `Error` is a hung game — the board is live, nothing is
+         * moving, and the last thing on screen is "COMPUTER IS THINKING…".
+         * A short pause and another attempt clears the transient causes; a
+         * turn that keeps failing is handed back rather than held forever.
+         */
+        this.#timer -= delta;
+        if (this.#timer > 0) break;
+        if (this.#attempts >= MAX_ATTEMPTS) {
+          this.#abandonTurn('COMPUTER PASSES');
+          break;
+        }
+        if (ready) {
+          this.#state = AIThinkingState.Idle;
+          this.#candidate = null;
+        }
+        break;
+
       default:
         break;
     }
+  }
+
+  /** Record a failed attempt and schedule the retry. */
+  #failAttempt(): void {
+    this.#attempts += 1;
+    this.#timer = RETRY_SECONDS;
+    this.#state = AIThinkingState.Error;
+    this.#executor.hideAim();
+  }
+
+  /**
+   * Give the turn up.
+   *
+   * The last resort, and deliberately loud: a passed turn is strange, but a
+   * frozen board with no explanation is worse. Uses the turn machine's own
+   * hand-over so the seat order — and four-player rotation — stays correct.
+   */
+  #abandonTurn(message: string): void {
+    this.reset();
+    this.#events.emit('ui:notify', { message, tone: 'bad' });
+    if (this.#turns.state === TurnState.StrikerPositioning) this.#turns.switchPlayer();
   }
 
   /** Start the turn: announce, then think for a difficulty-scaled delay. */
@@ -194,6 +274,12 @@ export class AIPlayer {
     }
 
     this.#state = AIThinkingState.SelectingShot;
+
+    // Strong tiers play their best options out and keep what actually works.
+    if (this.#config.simulatedCandidates > 0 && candidates.length > 0) {
+      candidates = this.#rankBySimulation(candidates, snapshot.ownColor);
+    }
+
     this.#candidate = AIShotScorer.choose(candidates, this.#config);
 
     if (!this.#candidate) {
@@ -221,6 +307,59 @@ export class AIPlayer {
   }
 
   /**
+   * Play the top candidates out and re-rank them by what happened.
+   *
+   * Geometry cannot see that a coin will clip another on the way, or that the
+   * striker will follow it in. Simulation can. Outcomes are folded back into
+   * the existing score rather than replacing it, so a shot that pots but
+   * scratches is still rejected, and the ordering among equally successful
+   * shots keeps the geometric preference for clean, controlled play.
+   */
+  #rankBySimulation(
+    candidates: AIShotCandidate[],
+    ownColor: CoinColor | null,
+  ): AIShotCandidate[] {
+    const board: SimPiece[] = this.#pieces.pieces
+      .filter((piece) => piece.active)
+      .map((piece) => ({
+        id: piece.id,
+        kind: piece.kind,
+        color: piece.color,
+        position: piece.position,
+      }));
+
+    const sorted = [...candidates].sort((a, b) => b.finalScore - a.finalScore);
+    const budget = Math.min(this.#config.simulatedCandidates, sorted.length);
+
+    for (let i = 0; i < budget; i += 1) {
+      const candidate = sorted[i];
+      if (!candidate) continue;
+
+      const result = this.#simulator.simulate(
+        board,
+        {
+          origin: candidate.strikerPosition,
+          direction: candidate.requiredAimDirection,
+          power: candidate.estimatedShotForce,
+        },
+        ownColor,
+      );
+
+      // Weighted by consequence, not merely by success: a scratch loses the
+      // turn and hands back a coin, which costs more than a missed pot.
+      candidate.finalScore +=
+        result.ownPocketed * 2.2 +
+        (result.queenPocketed ? 1.1 : 0) -
+        result.opponentPocketed * 1.4 -
+        (result.strikerPocketed ? 2.8 : 0) -
+        (result.madeContact ? 0 : 1.6);
+    }
+
+    return sorted.sort((a, b) => b.finalScore - a.finalScore);
+  }
+
+
+  /**
    * Show the aim guides briefly, so the shot is legible.
    *
    * Also moves the turn machine into `AIMING`, exactly as a human pointerdown
@@ -231,7 +370,7 @@ export class AIPlayer {
   #beginAiming(): void {
     if (!this.#candidate) return;
     if (!this.#turns.beginAiming()) {
-      this.#state = AIThinkingState.Error;
+      this.#failAttempt();
       return;
     }
     this.#state = AIThinkingState.Aiming;
@@ -249,21 +388,45 @@ export class AIPlayer {
     this.#executor.hideAim();
 
     const fired = this.#executor.fire(this.#candidate, this.#origin, this.#config);
-    this.#state = fired ? AIThinkingState.WaitingForPhysics : AIThinkingState.Error;
+    if (!fired) {
+      this.#failAttempt();
+      return;
+    }
+    this.#state = AIThinkingState.WaitingForPhysics;
+    this.#attempts = 0;
     this.#announcedThinking = false;
   }
 
-  /** No candidate at all: a gentle shot at the middle of the board. */
+  /**
+   * No candidate at all: a gentle shot at the middle of the board.
+   *
+   * This must go through `beginAiming` first. `executeShot` only fires from
+   * `AIMING`, and the fallback used to call it straight from
+   * `STRIKER_POSITIONING` — so the shot was silently refused, the AI declared
+   * itself to be waiting for physics that were never disturbed, found the
+   * board idle on the next step, and started the whole turn again. That is the
+   * loop that left the computer thinking forever once it had no coins left to
+   * aim at, with human input locked behind `isActing` the entire time.
+   */
   #playFallback(): void {
-    const side = this.#turns.currentSide;
+    if (!this.#turns.beginAiming()) {
+      this.#failAttempt();
+      return;
+    }
+
     const striker = this.#pieces.striker.position;
     const length = Math.hypot(striker.x, striker.z) || 1;
+    // Toward the centre of the board — the one direction that is always legal
+    // from any baseline.
     const direction = { x: -striker.x / length, z: -striker.z / length };
 
     this.#state = AIThinkingState.Shooting;
-    this.#turns.executeShot({ origin: striker, direction, power: 0.45 });
-    void side;
+    if (!this.#turns.executeShot({ origin: striker, direction, power: 0.45 })) {
+      this.#failAttempt();
+      return;
+    }
     this.#state = AIThinkingState.WaitingForPhysics;
+    this.#attempts = 0;
     this.#announcedThinking = false;
   }
 }

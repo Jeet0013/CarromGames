@@ -7,14 +7,17 @@
  * result can be hosted anywhere — or opened straight off disk — with no server,
  * no module resolution, and no network requests.
  *
- * That is only possible because the game ships no asset files: the board wood,
- * the markings, and every sound are generated at runtime.
+ * The board wood, the markings and every sound are still generated at runtime.
+ * The two exceptions are the welcome artwork and the logo, which are supplied
+ * art — `assetsInlineLimit` below turns those into data URIs so this file
+ * stays genuinely self-contained.
  *
  *   node scripts/build-single.mjs
  *   → dist-single/carrom-arena.html
  */
 
 import { build } from 'vite';
+import { buildId } from './build-id.mjs';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -24,10 +27,19 @@ await build({
   configFile: false,
   root: process.cwd(),
   base: './',
+  // `configFile: false` skips vite.config.ts, so the stamp has to be supplied
+  // here too or this artifact would be the one that cannot identify itself.
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId()),
+  },
   build: {
     outDir: OUT_DIR,
     target: 'es2022',
     sourcemap: false,
+    // Every asset becomes a data URI. Must match vite.config.ts — see the note
+    // there. Without it the two images below are emitted as separate files and
+    // this "self-contained" artifact quietly is not.
+    assetsInlineLimit: Number.MAX_SAFE_INTEGER,
     // Keep the module graph in one file. Code splitting would emit imports
     // that an inlined <script> cannot resolve.
     modulePreload: { polyfill: false },
@@ -58,7 +70,20 @@ const source = await readFile('index.html', 'utf8');
 // The artifact host supplies <!doctype>, <html>, <head> and <body>, so only
 // the inner content is emitted here: title, styles, the mount point, and the
 // inlined bundle.
+//
+// The head metadata is carried over too, and that is not optional. When this
+// file is served raw — which is exactly what GitHub Pages does — the browser
+// builds its own <head>, and without a viewport meta iOS Safari falls back to a
+// 980px layout viewport and scales the whole page down to fit. Everything looks
+// correct but shrunken, and no amount of CSS fixes it. Emulators do not catch
+// this because they set the viewport directly and never consult the tag.
 const title = /<title>([\s\S]*?)<\/title>/.exec(source)?.[1] ?? 'Carrom Arena 3D';
+
+// Carried verbatim from index.html so the two builds cannot drift apart.
+const metas = [...source.matchAll(/<meta\s[^>]*>/g)]
+  .map((match) => match[0])
+  .filter((tag) => !tag.includes('charset'))
+  .join('\n');
 const style = /<style>([\s\S]*?)<\/style>/.exec(source)?.[1] ?? '';
 const body = /<div id="app">([\s\S]*?)<\/div>\s*<script/.exec(source)?.[1] ?? '';
 
@@ -76,14 +101,36 @@ try {
   // No favicon on disk; the page is still valid without one.
 }
 
-const html = `${favicon}<title>${title}</title>
+/*
+ * Inline the boot logo the same way.
+ *
+ * The boot screen is markup in index.html, drawn before any of the bundle has
+ * run, so it cannot reference an asset the bundler inlined. In this artifact
+ * there is nowhere to fetch `/boot-logo.png` from either — a single file
+ * served as index.html has no siblings — so the src is rewritten to a data URI
+ * here. Without this the first screen a player sees is a broken image.
+ */
+let bootBody = body;
+try {
+  const png = await readFile('public/boot-logo.png');
+  bootBody = bootBody.replace(
+    'src="/boot-logo.png"',
+    `src="data:image/png;base64,${png.toString('base64')}"`,
+  );
+} catch {
+  // No boot logo on disk; the alt text stands in.
+}
+
+const html = `<meta charset="UTF-8">
+${metas}
+${favicon}<title>${title}</title>
 <style>
 /* The host resets body margin but not overflow; the board owns the viewport. */
 html, body { height: 100%; overflow: hidden; }
 ${style}
 </style>
 
-<div id="app">${body}</div>
+<div id="app">${bootBody}</div>
 
 <script>
 ${safeScript}

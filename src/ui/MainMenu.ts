@@ -1,17 +1,35 @@
 /**
  * Mode selection.
  *
- * The first screen a player sees, so it carries the game's identity: the dark
- * lacquer and brass of the board itself rather than a generic menu. Cards are
- * built from the same material vocabulary as the in-game player panels, so the
- * menu and the table feel like one object.
+ * ## What changed, and why
  *
- * A card can be locked. That is deliberate rather than hiding unfinished modes:
+ * This was five rounded cards in a two-column auto-fit grid, each with an
+ * uppercase mono label above its title and a coloured rail down its leading
+ * edge — cyan, orange, purple, blue, green. Three separate problems, all of
+ * them the same problem:
+ *
+ * - **Five accents is no accent.** Colour was carrying information the words
+ *   already carried. Now there is one, brass, and it is the metal the pockets
+ *   are made of.
+ * - **A two-column grid of five leaves an orphan.** The fifth card sat alone
+ *   on its row with dead space beside it at every width that fitted two.
+ * - **An eyebrow over every title is a label nobody reads.** The player count
+ *   moved to the right of the row, where it lines up in a column and can be
+ *   scanned.
+ *
+ * It is now one plate with the modes struck into it, separated by brass rules
+ * — the same object as the splash rather than a different product. Rows, not
+ * cards, because a card exists to say "this is separable from that one", and
+ * these are five items on one menu.
+ *
+ * A row can be locked. That is deliberate rather than hiding unfinished modes:
  * a player should be able to see what the game will offer, and a mode that
  * silently misbehaves is worse than one that says it is not ready.
  */
 
 import { GameMode } from '../core/types';
+import { ScreenGate } from './ScreenGate';
+import { brandMark, injectScreenSheet, injectSheet } from './theme';
 
 export interface MenuOption {
   readonly mode: GameMode;
@@ -20,202 +38,174 @@ export interface MenuOption {
   readonly blurb: string;
   /** Short tag: player count, opponent type. */
   readonly tag: string;
-  readonly accent: string;
-  /** When set, the card is unselectable and shows this reason. */
+  /** Which drawn mark identifies the row. */
+  readonly icon: MarkName;
+  /** When set, the row is unselectable and shows this reason. */
   readonly lockedReason?: string;
 }
+
+type MarkName = 'solo' | 'together' | 'four' | 'online' | 'practice';
 
 export const MENU_OPTIONS: readonly MenuOption[] = [
   {
     mode: GameMode.QuickMatch,
     title: 'Play vs Computer',
-    blurb: 'One player against the machine. Four difficulty levels.',
-    tag: '1 Player',
-    accent: '#4fb3c4',
+    blurb: 'Four difficulty levels.',
+    tag: '1 player',
+    icon: 'solo',
   },
   {
     mode: GameMode.LocalMultiplayer,
     title: 'Two Player',
-    blurb: 'Two players share one device, taking turns from opposite sides.',
-    tag: '2 Players',
-    accent: '#e8a33d',
+    blurb: 'Two players, one device.',
+    tag: '2 players',
+    icon: 'together',
   },
   {
     mode: GameMode.FourPlayer,
     title: 'Four Player',
-    blurb: 'Partners across the board — you and the player opposite you.',
-    tag: '4 Players · Teams',
-    accent: '#a487e0',
+    blurb: 'Partners with the player opposite you.',
+    tag: '4 players',
+    icon: 'four',
+  },
+  {
+    mode: GameMode.Online,
+    title: 'Play with a Friend',
+    blurb: 'Share a link, play on two devices.',
+    tag: 'Online',
+    icon: 'online',
   },
   {
     mode: GameMode.Practice,
     title: 'Practice',
-    blurb: 'The board to yourself. No turns, no pressure.',
+    blurb: 'The board to yourself.',
     tag: 'Solo',
-    accent: '#6fc08a',
+    icon: 'practice',
   },
 ];
+
+/**
+ * The marks.
+ *
+ * Drawn here rather than pulled from an icon set, at one stroke weight, and
+ * shared with the splash so the two screens are recognisably the same hand.
+ */
+const MARKS: Record<MarkName, string> = {
+  solo: `<circle cx="12" cy="8" r="3.4"/><path d="M5.5 19.5c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/>`,
+  together: `<circle cx="8.5" cy="8" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M2.5 19c0-3.2 2.7-5.4 6-5.4s6 2.2 6 5.4"/><path d="M15 14.4c2.9 0 6 1.4 6 4.6"/>`,
+  four: `<circle cx="12" cy="5.4" r="2.4"/><circle cx="12" cy="18.6" r="2.4"/><circle cx="5.4" cy="12" r="2.4"/><circle cx="18.6" cy="12" r="2.4"/><path d="M12 9.4v5.2M9.4 12h5.2"/>`,
+  online: `<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.4 2.6 3.6 5.4 3.6 8.5S14.4 18.4 12 20.5c-2.4-2.1-3.6-5.4-3.6-8.5S9.6 6.1 12 3.5Z"/>`,
+  practice: `<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.6"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>`,
+};
 
 export class MainMenu {
   readonly #root: HTMLElement;
   readonly #onSelect: (mode: GameMode) => void;
+  /** Ignores the click the splash's own tap leaves behind. */
+  readonly #gate = new ScreenGate();
   #visible = false;
 
   constructor(container: HTMLElement, onSelect: (mode: GameMode) => void) {
     this.#onSelect = onSelect;
 
-    this.#root = document.createElement('div');
-    this.#root.style.cssText = [
-      'position:absolute',
-      'inset:0',
-      'display:none',
-      'flex-direction:column',
-      'align-items:center',
-      'justify-content:center',
-      'gap:clamp(12px, 2.4vh, 26px)',
-      'padding:max(20px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom))',
-      // The board is behind this; a warm radial wash keeps it faintly visible
-      // rather than blanking it out, so the menu reads as sitting on the table.
-      'background:radial-gradient(ellipse at 50% 42%, rgba(28,23,18,0.86), rgba(10,9,8,0.96) 72%)',
-      'backdrop-filter:blur(3px)',
-      'z-index:60',
-      'overflow-y:auto',
-      '-webkit-overflow-scrolling:touch',
-    ].join(';');
+    injectScreenSheet();
+    injectSheet('menu', MENU_CSS);
 
-    this.#root.append(this.#buildHeader(), this.#buildCards());
+    this.#root = document.createElement('div');
+    this.#root.className = 'cx-screen';
+
+    const content = document.createElement('div');
+    content.className = 'cx-screen-panel cx-plate';
+    content.append(this.#buildHeader(), this.#buildList());
+
+    this.#root.append(content);
     container.append(this.#root);
   }
 
   #buildHeader(): HTMLElement {
-    const header = document.createElement('div');
-    header.style.cssText =
-      'display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center';
+    const header = document.createElement('header');
+    header.className = 'cx-screen-head';
 
+    /*
+     * The supplied logo, not a typeset name.
+     *
+     * It was a gradient-clipped heading approximating the mark; using the mark
+     * itself means the menu and the welcome screen carry the same object
+     * rather than two drawings of it. The h1 keeps the accessible name, since
+     * the mark is pixels.
+     */
     const title = document.createElement('h1');
-    title.textContent = 'Carrom Arena';
-    title.style.cssText = [
-      'margin:0',
-      'font:600 clamp(28px, 7vw, 46px)/1.05 system-ui, -apple-system, "Segoe UI", sans-serif',
-      'letter-spacing:0.01em',
-      'background:linear-gradient(180deg, #f7e7cf, #b07a45)',
-      '-webkit-background-clip:text',
-      'background-clip:text',
-      'color:transparent',
-      'text-wrap:balance',
-    ].join(';');
+    title.className = 'cx-menu-title';
+    title.append(brandMark('lg'));
 
-    const sub = document.createElement('p');
-    sub.textContent = 'Choose a game';
-    sub.style.cssText = [
-      'margin:0',
-      'font:500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace',
-      'letter-spacing:0.22em',
-      'text-transform:uppercase',
-      'color:#9a8d7d',
-    ].join(';');
+    // A struck rule under the mark instead of a second all-caps line. The old
+    // "CHOOSE A GAME" said nothing the five rows below it did not already say.
+    const rule = document.createElement('hr');
+    rule.className = 'cx-rule cx-menu-headrule';
 
-    header.append(title, sub);
+    header.append(title, rule);
     return header;
   }
 
-  #buildCards(): HTMLElement {
-    const grid = document.createElement('div');
-    grid.style.cssText = [
-      'display:grid',
-      // Two across when there is room, one when there is not. `auto-fit` with a
-      // min track keeps four cards from stretching into dead space.
-      'grid-template-columns:repeat(auto-fit, minmax(min(260px, 100%), 1fr))',
-      'gap:12px',
-      'width:min(560px, 100%)',
-    ].join(';');
+  #buildList(): HTMLElement {
+    // A menu is a list. Saying so gives a screen reader the count for free.
+    const list = document.createElement('ul');
+    list.className = 'cx-list';
 
-    for (const option of MENU_OPTIONS) grid.append(this.#buildCard(option));
-    return grid;
+    for (const option of MENU_OPTIONS) {
+      const item = document.createElement('li');
+      item.append(this.#buildRow(option));
+      list.append(item);
+    }
+
+    return list;
   }
 
-  #buildCard(option: MenuOption): HTMLElement {
+  #buildRow(option: MenuOption): HTMLElement {
     const locked = option.lockedReason !== undefined;
 
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.disabled = locked;
-    card.style.cssText = [
-      'position:relative',
-      'display:flex',
-      'flex-direction:column',
-      'align-items:flex-start',
-      'gap:5px',
-      'padding:17px 16px',
-      'border-radius:14px',
-      'border:1px solid rgba(176,122,69,0.3)',
-      'background:linear-gradient(165deg, rgba(34,28,22,0.95), rgba(19,16,13,0.95))',
-      'color:#f4ece1',
-      'text-align:left',
-      'font:inherit',
-      locked ? 'cursor:not-allowed' : 'cursor:pointer',
-      locked ? 'opacity:0.45' : 'opacity:1',
-      'transition:transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease',
-      '-webkit-tap-highlight-color:transparent',
-    ].join(';');
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'cx-row cx-focus';
+    row.disabled = locked;
 
-    // A thin accent rail on the leading edge — the one place each mode's colour
-    // appears, so the four cards are distinguishable at a glance without
-    // colouring the whole surface.
-    const rail = document.createElement('span');
-    rail.style.cssText = [
-      'position:absolute',
-      'left:0',
-      'top:14px',
-      'bottom:14px',
-      'width:3px',
-      'border-radius:0 3px 3px 0',
-      `background:${option.accent}`,
-      locked ? 'opacity:0.5' : 'opacity:1',
-    ].join(';');
+    const mark = document.createElement('span');
+    mark.className = 'cx-mark';
+    mark.setAttribute('aria-hidden', 'true');
+    mark.innerHTML = `<svg viewBox="0 0 24 24">${MARKS[option.icon]}</svg>`;
 
-    const tag = document.createElement('span');
-    tag.textContent = locked ? `${option.tag} · ${option.lockedReason}` : option.tag;
-    tag.style.cssText = [
-      'font:600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace',
-      'letter-spacing:0.16em',
-      'text-transform:uppercase',
-      `color:${locked ? '#9a8d7d' : option.accent}`,
-    ].join(';');
+    const text = document.createElement('span');
+    text.className = 'cx-row-text';
 
     const title = document.createElement('span');
+    title.className = 'cx-row-name';
     title.textContent = option.title;
-    title.style.cssText =
-      'font:600 18px/1.2 system-ui, -apple-system, sans-serif;letter-spacing:0.01em';
 
     const blurb = document.createElement('span');
-    blurb.textContent = option.blurb;
-    blurb.style.cssText =
-      'font:400 13px/1.45 system-ui, -apple-system, sans-serif;color:#9a8d7d';
+    blurb.className = 'cx-row-blurb';
+    blurb.textContent = locked ? `${option.blurb} ${option.lockedReason}` : option.blurb;
 
-    card.append(rail, tag, title, blurb);
+    text.append(title, blurb);
+
+    // Right-aligned and tabular, so the counts form a column the eye can run
+    // down rather than five labels of five different widths.
+    const tag = document.createElement('span');
+    tag.className = 'cx-row-meta';
+    tag.textContent = option.tag;
+
+    row.append(mark, text, tag);
 
     if (!locked) {
-      card.addEventListener('pointerenter', () => {
-        card.style.borderColor = option.accent;
-        card.style.transform = 'translateY(-2px)';
-        card.style.boxShadow = `0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px ${option.accent}44`;
-      });
-      const rest = (): void => {
-        card.style.borderColor = 'rgba(176,122,69,0.3)';
-        card.style.transform = 'none';
-        card.style.boxShadow = 'none';
-      };
-      card.addEventListener('pointerleave', rest);
-      card.addEventListener('click', (event) => {
+      row.addEventListener('click', (event) => {
         // The canvas listens for pointer events beneath this overlay.
         event.stopPropagation();
-        rest();
+        // A tap that opened this menu must not also choose from it.
+        if (this.#gate.blocked(event)) return;
         this.#onSelect(option.mode);
       });
     }
 
-    return card;
+    return row;
   }
 
   get visible(): boolean {
@@ -224,6 +214,7 @@ export class MainMenu {
 
   show(): void {
     this.#visible = true;
+    this.#gate.open();
     this.#root.style.display = 'flex';
   }
 
@@ -236,15 +227,21 @@ export class MainMenu {
   setLocked(mode: GameMode, locked: boolean): void {
     const index = MENU_OPTIONS.findIndex((o) => o.mode === mode);
     if (index < 0) return;
-    const card = this.#root.querySelectorAll('button')[index];
-    if (card instanceof HTMLButtonElement) {
-      card.disabled = locked;
-      card.style.opacity = locked ? '0.45' : '1';
-      card.style.cursor = locked ? 'not-allowed' : 'pointer';
-    }
+    const row = this.#root.querySelectorAll('button')[index];
+    if (row instanceof HTMLButtonElement) row.disabled = locked;
   }
 
   dispose(): void {
     this.#root.remove();
   }
 }
+
+const MENU_CSS = `
+.cx-menu-title { margin: 0; line-height: 0; }
+.cx-menu-headrule { width: 100%; }
+
+/* Under about 380px the count and the blurb start fighting; the blurb wins. */
+@media (max-width: 380px) {
+  .cx-row-meta { display: none; }
+}
+`;

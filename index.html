@@ -67,15 +67,24 @@
         pointer-events: none;
       }
 
+      /*
+       * The mark, not the name set in a system font.
+       *
+       * This is the first thing drawn — before the bundle has parsed, let alone
+       * before the engine reports ready — so it is the one screen that cannot
+       * use anything the JS provides. The file is served from /public and
+       * inlined into the single-file build the same way the favicon is.
+       */
       .boot__title {
         margin: 0;
-        font-size: clamp(1.6rem, 5vw, 2.6rem);
-        font-weight: 600;
-        letter-spacing: 0.02em;
-        background: linear-gradient(180deg, #f7e7cf, var(--wood));
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
+        line-height: 0;
+      }
+
+      .boot__logo {
+        display: block;
+        width: clamp(170px, 44vw, 260px);
+        height: auto;
+        filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.6));
       }
 
       .boot__status {
@@ -119,7 +128,9 @@
   <body>
     <div id="app">
       <div id="boot">
-        <h1 class="boot__title">Carrom Arena 3D</h1>
+        <h1 class="boot__title">
+          <img class="boot__logo" src="/boot-logo.png" alt="Carrom Arena" width="360" height="180" />
+        </h1>
         <div class="boot__ring" aria-hidden="true"></div>
         <p class="boot__status" id="boot-status" role="status">Starting…</p>
       </div>

@@ -53,6 +53,37 @@ export interface PieceBodyOptions {
   readonly ccd?: boolean;
 }
 
+/**
+ * How slick a powdered board is, and for how long.
+ *
+ * `STRENGTH` is the friction multiplier at full effect: 0.22 means the board
+ * keeps under a quarter of its friction, so it is 78% slicker than bare. It
+ * has come down 0.55 → 0.40 → 0.32 → 0.22; at the original figure a rebound
+ * rarely had enough left to cross the board a second time, so the bank shot
+ * behind the striker line was luck rather than a play.
+ *
+ * The limit here is arithmetic, not taste. Coulomb deceleration is
+ * BOARD_FRICTION x STRENGTH x g, so at 0.22 a striker at MAX_VELOCITY that
+ * never touches a rail takes 12.0s to stop — which is exactly the old
+ * MAX_SETTLE_SECONDS, and a shot that takes precisely as long as the turn
+ * machine is willing to wait is a shot that gets cut off. The cap moved to 16s
+ * with this, restoring 25% headroom on that pessimistic case.
+ *
+ * Going much below this means raising the cap again, and the cap is also how
+ * long a genuinely stuck board hangs before the game recovers itself. That is
+ * the real trade, and it is why this is not simply set to 0.05.
+ *
+ * The figure was also written twice: once as this default and once as a
+ * literal inside the decay, which interpolates back toward a bare board. They
+ * agreed, so nothing was wrong — but changing one would have powdered the
+ * board at one strength and decayed it toward another, and the symptom would
+ * have been a board that mysteriously got slicker as the powder wore off.
+ */
+const POWDER = {
+  STRENGTH: 0.22,
+  SECONDS: 40,
+} as const;
+
 export class PhysicsWorld {
   readonly #world: RAPIER.World;
   readonly #queue: RAPIER.EventQueue;
@@ -91,12 +122,7 @@ export class PhysicsWorld {
 
     this.#collisions = new CollisionSystem(events, {
       resolveOwner: (handle) => this.#colliderOwners.get(handle),
-      speedOf: (id) => {
-        const body = this.#bodies.get(id)?.body;
-        if (!body) return 0;
-        const v = body.linvel();
-        return Math.hypot(v.x, v.z);
-      },
+      speedOf: (id) => this.speedOf(id),
     });
 
     this.#createRails();
@@ -229,12 +255,26 @@ export class PhysicsWorld {
   }
 
   /**
+   * Planar speed of one body, or 0 if it is not in the world.
+   *
+   * Read by the powder trail, which needs to know how hard the striker is
+   * travelling. The collision system already computed this inline for its own
+   * purposes; this is the same thing with a name.
+   */
+  speedOf(id: string): number {
+    const body = this.#bodies.get(id)?.body;
+    if (!body) return 0;
+    const v = body.linvel();
+    return Math.hypot(v.x, v.z);
+  }
+
+  /**
    * Scatter powder on the board.
    *
-   * @param strength  friction multiplier at full effect (0.55 ≈ 45% slicker)
+   * @param strength  friction multiplier at full effect; see `POWDER`
    * @param seconds   how long it lasts before the board is bare again
    */
-  applyPowder(strength = 0.55, seconds = 40): void {
+  applyPowder(strength = POWDER.STRENGTH, seconds = POWDER.SECONDS): void {
     this.#powderDuration = seconds;
     this.#powderRemaining = seconds;
     this.#frictionScale = strength;
@@ -299,7 +339,7 @@ export class PhysicsWorld {
     const level = this.#powderRemaining / this.#powderDuration;
     const eased = level * level * (3 - 2 * level);
     // Interpolate from bare board (1) toward the powdered value.
-    this.#frictionScale = 1 - (1 - 0.55) * eased;
+    this.#frictionScale = 1 - (1 - POWDER.STRENGTH) * eased;
   }
 
   #applySurfaceFriction(delta: number): void {

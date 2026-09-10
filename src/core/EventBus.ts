@@ -41,6 +41,14 @@ export interface GameEvents {
   'shot:fired': { readonly by: PlayerSlot; readonly shot: ShotCommand };
   /** Every body has come to rest; the shot can now be evaluated. */
   'shot:settled': { readonly by: PlayerSlot };
+  /**
+   * The rules have finished with the shot and the board is final.
+   *
+   * Distinct from `shot:settled`, which fires *before* evaluation. Anything
+   * that needs the post-shot truth — who plays next, where the pieces ended —
+   * must wait for this one.
+   */
+  'shot:resolved': { readonly by: PlayerSlot; readonly nextPlayer: PlayerSlot };
 
   /**
    * Two pieces met, or a piece hit a rail. `impact` is the planar speed at
@@ -63,7 +71,9 @@ export interface GameEvents {
   /** Coin ownership resolved from the first valid pocket. */
   'rules:ownershipAssigned': { readonly player: PlayerSlot; readonly color: CoinColor };
   'rules:foul': { readonly player: PlayerSlot; readonly kind: FoulKind };
-  'rules:gameComplete': { readonly winner: PlayerSlot };
+  /** `by` is who took the final shot — not always the winner, since a player's
+   *  board can be cleared by their opponent's fouls. */
+  'rules:gameComplete': { readonly winner: PlayerSlot; readonly by: PlayerSlot };
 
   /** Queen lifecycle moved — drives the COVER THE QUEEN indicator. */
   'queen:stateChanged': { readonly from: QueenState; readonly to: QueenState };
