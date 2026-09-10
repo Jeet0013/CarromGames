@@ -114,6 +114,29 @@ export class Lighting {
     return this.#group;
   }
 
+  /**
+   * Turn the whole rig to follow the camera.
+   *
+   * The lights were fixed in world space, which is correct for a fixed camera
+   * and wrong for one that orbits. Four-player rotates the view to face each
+   * seat in turn, and from the seat opposite the key the board reflected the
+   * light straight back down the lens: the bed washed out and the coins
+   * stopped reading against it. One player in four was effectively playing on
+   * a mirror.
+   *
+   * Rotating the group keeps the key at a constant angle *relative to the
+   * view*, so every seat sees the same board. It is not what a lamp in a real
+   * room does, but a real room does not spin the players around the table
+   * either — and a game where the board is harder to read on some turns than
+   * others is unfair in a way nobody would accept as realism.
+   *
+   * The hemisphere and ambient lights are rotation-invariant; only the key and
+   * the fill actually move.
+   */
+  setAzimuthDegrees(degrees: number): void {
+    this.#group.rotation.y = THREE.MathUtils.degToRad(degrees);
+  }
+
   /** Re-apply shadow settings after a quality change. */
   setQuality(quality: QualityTier): void {
     this.#configureKeyShadow(quality, BOARD_CONFIG.frame.outerSize / 2);

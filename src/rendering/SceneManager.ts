@@ -38,6 +38,19 @@ export class SceneManager {
    * feeds the backdrop's mood, and one exposed dial is easier to tune against
    * the key light than a constant buried in the bake.
    */
+  /**
+   * Turn the baked room to follow the camera.
+   *
+   * The environment map has a lamp panel in it, and a glossy board reflects
+   * it. Rotating the light rig without rotating the room would fix the direct
+   * highlight and leave its reflection behind — the two have to move together
+   * or the board's shading and its reflections disagree about where the light
+   * is.
+   */
+  setEnvironmentRotationDegrees(degrees: number): void {
+    this.#scene.environmentRotation.set(0, THREE.MathUtils.degToRad(degrees), 0);
+  }
+
   setEnvironment(texture: THREE.Texture | null, intensity = 1): void {
     this.#scene.environment = texture;
     this.#scene.environmentIntensity = intensity;

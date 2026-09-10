@@ -20,6 +20,26 @@ import {
 import { Pockets } from './Pockets';
 import { QualityTier } from '../core/types';
 
+/**
+ * How reflective a wooden surface is.
+ *
+ * `clearcoat` is a second specular lobe over the diffuse — the varnish — and
+ * `clearcoatRoughness` is how sharply it mirrors. Low roughness on a large
+ * flat plane is what produces glare when a light lands at the reflection
+ * angle.
+ */
+interface WoodGloss {
+  readonly clearcoat: number;
+  readonly clearcoatRoughness: number;
+  readonly sheen: number;
+}
+
+/** The frame: lacquered timber, and the glossiest thing on the board. */
+const FRAME_GLOSS: WoodGloss = { clearcoat: 0.65, clearcoatRoughness: 0.22, sheen: 0.15 };
+
+/** The bed: powdered, matte, and never a mirror at any camera angle. */
+const SURFACE_GLOSS: WoodGloss = { clearcoat: 0.16, clearcoatRoughness: 0.62, sheen: 0.06 };
+
 export class CarromBoard {
   readonly #group = new THREE.Group();
   readonly #pockets: Pockets;
@@ -81,10 +101,25 @@ export class CarromBoard {
     geometry.computeVertexNormals();
     applyPlanarUVs(geometry, half);
 
+    /*
+     * The bed is the matte part of a carrom board, not the lacquered part.
+     *
+     * It shared the frame's finish — clearcoat 0.65 at roughness 0.22, which is
+     * very close to a mirror. On a fixed camera that only reads as a nice
+     * sheen. In four-player the camera rotates to face each seat, and from the
+     * seats that end up opposite the key light the bed threw the lamp straight
+     * back down the lens: the board washed out and the coins stopped reading
+     * against it.
+     *
+     * A real playing bed is dusted with boric powder to make it slick, and
+     * powder is the opposite of glossy. So the bed gets its own finish and the
+     * frame keeps the lacquer.
+     */
     const material = this.#createWoodMaterial(quality, {
       map: this.#textures.map,
       roughnessMap: this.#textures.roughnessMap,
-      roughness: 0.55,
+      roughness: 0.62,
+      gloss: SURFACE_GLOSS,
     });
 
     const mesh = new THREE.Mesh(geometry, material);
@@ -184,6 +219,8 @@ export class CarromBoard {
       roughnessMap?: THREE.Texture;
       color?: number;
       roughness: number;
+      /** Defaults to the frame's lacquer. */
+      gloss?: WoodGloss;
     },
   ): THREE.Material {
     const base = {
@@ -196,13 +233,14 @@ export class CarromBoard {
 
     if (quality === QualityTier.Low) return new THREE.MeshStandardMaterial(base);
 
+    const gloss = options.gloss ?? FRAME_GLOSS;
     return new THREE.MeshPhysicalMaterial({
       ...base,
-      clearcoat: 0.65,
-      clearcoatRoughness: 0.22,
+      clearcoat: gloss.clearcoat,
+      clearcoatRoughness: gloss.clearcoatRoughness,
       // Slight sheen picks out the grain at grazing angles, which is where a
       // polished board is most obviously polished.
-      sheen: 0.15,
+      sheen: gloss.sheen,
       sheenRoughness: 0.5,
       sheenColor: new THREE.Color(0xffe9c9),
     });

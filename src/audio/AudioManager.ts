@@ -300,6 +300,24 @@ export class AudioManager {
       // Safari can hand back a suspended context even after a gesture.
       void context.resume();
       this.#primeSilentTrack();
+
+      /*
+       * Decode the crowd now, not on the first pocket.
+       *
+       * Decoding is asynchronous, and `#playSample` falls back to the
+       * synthesised crowd whenever the buffer is not ready yet. That fallback
+       * exists for a real failure — a clip that will not decode at all — but
+       * it was also firing on the very first pocket of every session, so a
+       * player heard the old oscillator crowd once and the recording
+       * afterwards. Two different sounds for the same event reads as a bug,
+       * and it is the first one they hear.
+       *
+       * Audio unlocks on the opening tap, long before anyone can pocket
+       * anything, so starting the decode here means it is ready in time.
+       */
+      this.#sample(context, applauseUrl);
+      this.#sample(context, booUrl);
+
       // The menu is usually already showing by the time audio unlocks.
       if (this.#menuWanted) this.startMenuMusic();
     } catch (error) {

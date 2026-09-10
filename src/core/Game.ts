@@ -249,7 +249,7 @@ export class Game {
       // shots into a match that no longer exists on this device.
       if (this.#net.isOnline) {
         this.#net.disconnect();
-        this.#camera.setAzimuthDegrees(0);
+        this.#setViewAzimuth(0);
       }
       this.#pendingSync = null;
       this.#ai.configure(null, AIDifficulty.Normal);
@@ -506,12 +506,26 @@ export class Game {
       [PlayerSide.Top]: 180,
       [PlayerSide.Left]: 270,
     }[this.#turns.currentSide];
-    this.#camera.setAzimuthDegrees(azimuth, snap);
+    this.#setViewAzimuth(azimuth, snap);
+  }
+
+  /**
+   * Turn the view, and turn the light with it.
+   *
+   * Every azimuth change goes through here. The rig used to be fixed in world
+   * space, so rotating to face a seat could put the camera opposite the key
+   * light — and the board reflected it straight back, washing out the bed and
+   * the coins on that player's turn.
+   */
+  #setViewAzimuth(degrees: number, snap = false): void {
+    this.#camera.setAzimuthDegrees(degrees, snap);
+    this.#lighting.setAzimuthDegrees(degrees);
+    this.#scene.setEnvironmentRotationDegrees(degrees);
   }
 
   #applyLocalSeatView(): void {
     const guest = this.#net.role === 'guest';
-    this.#camera.setAzimuthDegrees(guest ? 180 : 0);
+    this.#setViewAzimuth(guest ? 180 : 0);
 
     const seats = SEAT_LAYOUTS[GameMode.Online].map((seat) => ({
       ...seat,
@@ -608,7 +622,7 @@ export class Game {
         this.#pendingSync = null;
         this.#victory.hide();
         this.#net.disconnect();
-        this.#camera.setAzimuthDegrees(0, true);
+        this.#setViewAzimuth(0, true);
         this.showMenu();
       }
       if (status === 'error' && detail) this.#lobby.setStatus(detail);
@@ -776,9 +790,9 @@ export class Game {
     // keeps sending shots into a match that no longer exists.
     if (this.#net.isOnline) {
       this.#net.disconnect();
-      this.#camera.setAzimuthDegrees(0, true);
+      this.#setViewAzimuth(0, true);
     }
-    this.#camera.setAzimuthDegrees(0, true);
+    this.#setViewAzimuth(0, true);
     // Playing the computer needs a difficulty before a match can begin.
     if (mode === GameMode.QuickMatch) {
       this.#menu.hide();
